@@ -9,48 +9,6 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as Data
 import matplotlib.pyplot as plt
-
-# Custom dataset
-class ToyDataset(Data.Dataset):
-    def __init__(self, x_range, y_range, n_sample, concept):
-        super(ToyDataset, self).__init__()
-        self.n_sample = n_sample
-        self.x_range = x_range
-        self.y_range = y_range
-        self.concept = np.array(concept)
-        self.t = 0
-        self.data = []
-        self.target = []
-        self.set_t(self.t)
-    
-    def __getitem__(self, index):
-        return torch.FloatTensor(self.data[index]), self.target[index]
-
-    def __len__(self):
-        return len(self.target)
-    
-    def set_t(self, t):
-        self.t = t
-        self.data = np.random.uniform([self.x_range[0], self.y_range[0]], [self.x_range[1], self.y_range[1]],
-                                 size=(self.n_sample, 2))
-        w = self.concept[t].reshape((-1, 1))
-        aug_data = np.concatenate((self.data, np.ones((len(self.data), 1))), axis=1)
-        y = np.matmul(aug_data, w).reshape((-1,))
-        dist = np.absolute(y) / np.linalg.norm(self.concept[t])
-        y = y >= 0
-        y = np.array(y, dtype='int64')
-        u = np.mean(dist)
-        std = np.std(dist)
-        related_dist = (dist - u) / std
-        for i in range(len(related_dist)):
-            if related_dist[i] < -0.75:
-                p = np.random.uniform(0, 1)
-                if p < 0.1:
-                    if y[i] == 0:
-                        y[i] = 1
-                    else:
-                        y[i] = 0
-        self.target = y
         
 class SoftmaxDataset(Data.Dataset):
     def __init__(self, softmax_data, mode='train'):
@@ -113,9 +71,197 @@ def get_uncertain_translate_concept(s, e, slice, std_ratio=0.5):
         concept.append([s[0], s[1], t])
     return concept
 
+def get_hyperball_concept(r_range=None, c_range=None, K_range=None, t=11):
+    """
+    Args:
+        r_range: the range of each dimension of radius
+            * size -> 2 * dimension
+        c_range: the range of each dimension of center
+            * size -> 2 * dimension
+        K_range:
+            * size -> dimension
+        t:
+            number of time
+    """
+
+    if r_range == None:
+        # default generate
+        assert c_range == None
+        assert K_range == None
+        radius = list(np.linspace([2, 1], [1, 2], t))
+        center = list(np.linspace([0, -15], [0, 15], t))
+        K = [25] * t
+    else:
+        radius = list(np.linspace(r_range[0], r_range[1], t))
+        center = list(np.linspace(c_range[0], c_range[1], t))
+        K = list(np.linspace(K_range[0], K_range[1], t))
+
+    return [radius, center, K]
+
+# Translation dataset (Synthetic): -x+4y-20 -> -x+4y+20
+class TranslateDataset(Data.Dataset):
+    def __init__(self):
+        super(TranslateDataset, self).__init__()
+        self.x_range = [-20, 20]
+        self.y_range = [-5, 5]
+        s = [-1, 4, -20]
+        e = [-1, 4, 20]
+        self.num_batch = 11
+        concept = get_uncertain_translate_concept(s, e, self.num_batch-1, std_ratio=0.5) 
+        self.n_per_batch = 4000
+        self.concept = np.array(concept)
+        self.t = 0
+        self.data = []
+        self.target = []
+        self.set_t(self.t)
+        self.num_class = 2
+    
+    def __getitem__(self, index):
+        return torch.FloatTensor(self.data[index]), self.target[index]
+
+    def __len__(self):
+        return len(self.target)
+    
+    def set_t(self, t):
+        self.t = t
+        self.data = np.random.uniform([self.x_range[0], self.y_range[0]], [self.x_range[1], self.y_range[1]],
+                                 size=(self.n_per_batch, 2))
+        w = self.concept[t].reshape((-1, 1))
+        aug_data = np.concatenate((self.data, np.ones((len(self.data), 1))), axis=1)
+        y = np.matmul(aug_data, w).reshape((-1,))
+        dist = np.absolute(y) / np.linalg.norm(self.concept[t][0:2])
+        y = y >= 0
+        y = np.array(y, dtype='int64')
+        u = np.mean(dist)
+        std = np.std(dist)
+        related_dist = (dist - u) / std
+        for i in range(len(related_dist)):
+            if related_dist[i] < -0.75:
+                p = np.random.uniform(0, 1)
+                if p < 0.1:
+                    if y[i] == 0:
+                        y[i] = 1
+                    else:
+                        y[i] = 0
+        self.target = y
+
+# Rotation dataset (Synthetic): rotate 2 circles
+class RotateDataset(Data.Dataset):
+    def __init__(self):
+        super(RotateDataset, self).__init__()
+        self.x_range = [-5, 5]
+        self.y_range = [-5, 5]
+        self.num_batch = 41
+        rpc = 4 * math.pi / (self.num_batch - 1)
+        angles = []
+        for i in range(self.num_batch):
+            angles.append(i*rpc)
+        concept = get_rotate_concept(angles)
+        self.num_batch = 41
+        self.n_per_batch = 4000
+        self.concept = np.array(concept)
+        self.t = 0
+        self.data = []
+        self.target = []
+        self.set_t(self.t)
+        self.num_class = 2
+        
+    def __getitem__(self, index):
+        return torch.FloatTensor(self.data[index]), self.target[index]
+
+    def __len__(self):
+        return len(self.target)
+    
+    def set_t(self, t):
+        self.t = t
+        self.data = np.random.uniform([self.x_range[0], self.y_range[0]], [self.x_range[1], self.y_range[1]],
+                                 size=(self.n_per_batch, 2))
+        w = self.concept[t].reshape((-1, 1))
+        aug_data = np.concatenate((self.data, np.ones((len(self.data), 1))), axis=1)
+        y = np.matmul(aug_data, w).reshape((-1,))
+        dist = np.absolute(y) / np.linalg.norm(self.concept[t][0:2])
+        y = y >= 0
+        y = np.array(y, dtype='int64')
+        u = np.mean(dist)
+        std = np.std(dist)
+        related_dist = (dist - u) / std
+        for i in range(len(related_dist)):
+            if related_dist[i] < -0.75:
+                p = np.random.uniform(0, 1)
+                if p < 0.1:
+                    if y[i] == 0:
+                        y[i] = 1
+                    else:
+                        y[i] = 0
+        self.target = y
+
+# Hyperball dataset (Synthetic): x1^2/20^2+(x2-20)^2/15^2=1→x1^2/2^2+(x2-20)^2/30^2=1
+class HyperballDataset(Data.Dataset):
+    """
+    Args:
+        ranges:
+            * range of each dimension
+            * size -> 2 (low and high) * dimension
+        n_per_batch:
+            * number of sample per batch
+        concept:
+            * [r, c, K]
+            * r -> raidus of each dimension
+                * size: time * dimension
+            * c -> center of each dimension
+                * size: time * dimension
+            * K -> value for easier adjustment
+                * size: time
+        noise:
+            * probability that label is flipped
+              while generating data
+    """
+    """
+    decision boundary of hyper ball:
+        * sum((x-c)**2 /r**2) = K
+    """
+
+    def __init__(self):
+        super(HyperballDataset, self).__init__()
+        self.ranges = [[-10,-10],[10,10]]
+        self.x_range = [self.ranges[0][0], self.ranges[1][0]]
+        self.y_range = [self.ranges[0][1], self.ranges[1][1]]
+        self.dim = len(self.ranges[0])
+        self.num_batch = 11
+        self.n_per_batch = 4000
+        self.concept = get_hyperball_concept(r_range=[[20,15],[2,30]], c_range=[[0,20],[0,20]], K_range=[1, 1], t=self.num_batch)
+        self.radius = self.concept[0]
+        self.center = self.concept[1]
+        self.K = self.concept[2]
+        self.noise = 0
+        self.t = 0
+        self.data = []
+        self.target = []
+        self.set_t(self.t)
+        self.num_class = 2
+        
+    def __getitem__(self, index):
+        return torch.FloatTensor(self.data[index]), self.target[index]
+
+    def __len__(self):
+        return len(self.target)
+
+    def set_t(self, t):
+        self.t = t
+        self.data = np.random.uniform(self.ranges[0], self.ranges[1],
+                                 size=(self.n_per_batch, self.dim))
+        radius = np.array(self.radius[t])
+        center = np.array(self.center[t])
+        K = self.K[t]
+        y = np.sum((self.data - center)**2 / radius**2, axis = 1) - K
+        y = y * np.random.uniform(-self.noise, 1 - self.noise, self.n_per_batch)
+        y = y >= 0
+        y = np.array(y, dtype='int64')
+        self.target = y
+
 # Gas sensor dataset
 class GasSensorDataset(Data.Dataset):
-    def __init__(self, normalize=False):
+    def __init__(self, normalize=True):
         super(GasSensorDataset, self).__init__()
         self.base_dir = 'datasets'
         self.dataset_dir = 'gas'
@@ -131,7 +277,7 @@ class GasSensorDataset(Data.Dataset):
             os.system('rm -f Dataset.zip')
             os.chdir('..')
             
-        self.concept = 10
+        self.num_batch = 10
         self.data = []
         self.target = []
         self.normalize= normalize
@@ -139,7 +285,7 @@ class GasSensorDataset(Data.Dataset):
         self.std = None
         self.t = 0
         self.set_t(self.t)
-        
+        self.num_class = 6
             
     def __getitem__(self, index):
         return torch.FloatTensor(self.data[index]), self.target[index]
@@ -177,7 +323,7 @@ class GasSensorDataset(Data.Dataset):
 
 # covertype dataset
 class CovertypeDataset(Data.Dataset):
-    def __init__(self, normalize=False):
+    def __init__(self, normalize=True):
         super(CovertypeDataset, self).__init__()
         self.base_dir = 'datasets'
         self.dataset_dir = 'covertype'
@@ -192,7 +338,7 @@ class CovertypeDataset(Data.Dataset):
             os.system('rm -f covtype.data.gz')
             os.chdir('../..')
             
-        self.concept = 10
+        self.num_batch = 10
         self.n_total = 0
         with open(os.path.join(self.base_dir, self.dataset_dir, 'covtype.data'), 'r') as f:
             while 1:
@@ -202,7 +348,7 @@ class CovertypeDataset(Data.Dataset):
                     break
                 self.n_total += 1
 
-        self.n_per_concept = int(self.n_total/self.concept)
+        self.n_per_batch = int(self.n_total/self.num_batch)
         self.data = []
         self.target = []
         self.normalize= normalize
@@ -210,7 +356,7 @@ class CovertypeDataset(Data.Dataset):
         self.std = None
         self.t = 0
         self.set_t(self.t)
-        
+        self.num_class = 7
             
     def __getitem__(self, index):
         return torch.FloatTensor(self.data[index]), self.target[index]
@@ -223,11 +369,11 @@ class CovertypeDataset(Data.Dataset):
         self.data = []
         self.target = []
         # set starting and ending indices
-        s = self.t * self.n_per_concept
-        if self.t == self.concept - 1:
+        s = self.t * self.n_per_batch
+        if self.t == self.num_batch - 1:
             e = self.n_total
         else:
-            e = (self.t + 1) * self.n_per_concept
+            e = (self.t + 1) * self.n_per_batch
 
         with open(os.path.join(self.base_dir, self.dataset_dir, 'covtype.data'), 'r') as f:
             i = 0
@@ -252,3 +398,9 @@ class CovertypeDataset(Data.Dataset):
             
         if self.normalize:
             self.data[:, 0:10] = (self.data[:, 0:10] - self.mu) / self.std
+            
+dataset_dict = {'translate':TranslateDataset,
+                'rotate':RotateDataset,
+                'ball':HyperballDataset,
+                'gas':GasSensorDataset,
+                'covertype':CovertypeDataset}

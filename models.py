@@ -1,18 +1,11 @@
-import numpy as np
-import pandas as pd
-import copy
-import os
 import math
-import random
 import torch
 import torch.nn as nn
-import torch.optim as optim
-import torch.utils.data as Data
-import matplotlib.pyplot as plt
 
-class Classifier(nn.Module):
+# logistic regression classifier
+class LogisticRegression(nn.Module):
     def __init__(self, in_size=2, out_size=2):
-        super(Classifier, self).__init__()
+        super(LogisticRegression, self).__init__()
         self.fc = nn.Linear(in_size, out_size)
 
     def forward(self, x):
