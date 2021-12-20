@@ -36,7 +36,7 @@ python3 experiment_vae.py --last_step_method soft --dataset gas
 --device: set device (type=str, default='cuda:0', option={'cpu', 'cuda:0', 'cuda:1', ...})
 ```
 
-*experiment_vae.py
+* experiment_vae.py
 ```
 --seed: set random seed (type=int, default=0)
 --last_step_method: set the last step method (type=str, default='none', option={'none', 'soft', 'hard', 'cost'})
