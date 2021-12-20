@@ -32,7 +32,7 @@ python3 experiment_vae.py --last_step_method soft --dataset gas
 --activate_dynamic_t: set when to activate the dynamic predictor for prediction (type=int, default=3)
 --time_window: set the maximum input vector sequence length of the dynamic predictor (type=int, default=3)
 --dataset: set the dataset for the experiment (type=str, default='translate', option={'translate', 'rotate', 'ball', 'gas', 'covertype'})
---classifier: set the classifier type (type=str, default='lr')
+--classifier: set the classifier type (type=str, default='lr', option={'lr':logistic regression, 'mlp':neural network})
 --device: set device (type=str, default='cuda:0', option={'cpu', 'cuda:0', 'cuda:1', ...})
 ```
 
@@ -57,7 +57,7 @@ python3 experiment_vae.py --last_step_method soft --dataset gas
 --activate_dynamic_t: set when to activate the dynamic predictor for prediction (type=int, default=3)
 --time_window: set the maximum input vector sequence length of the dynamic predictor (type=int, default=3)
 --dataset: set the dataset for the experiment (type=str, default='translate', option={'translate', 'rotate', 'ball', 'gas', 'covertype'})
---classifier: set the classifier type (type=str, default='lr')
+--classifier: set the classifier type (type=str, default='lr', option={'lr':logistic regression, 'mlp':neural network})
 --device: set device (type=str, default='cuda:0', option={'cpu', 'cuda:0', 'cuda:1', ...})
 ```
 
