@@ -52,7 +52,7 @@ class KDD99Dataset(Data.Dataset):
         f = lambda x: 0 if x == 'normal' else 1
         df['label'] = df['label'].map(f) 
         self.alldata = df.drop(['label'],axis=1).to_numpy()
-        self.target = df['label'].to_numpy()
+        self.alltarget = df['label'].to_numpy()
         self.batch_data_num = int(self.alldata.shape[0] / self.num_batch)
 
         self.normalize_indices = [0,1,2,4,5,6,7,9,12,13,14,15,16,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37]
@@ -64,7 +64,7 @@ class KDD99Dataset(Data.Dataset):
         start = self.t * self.batch_data_num
         end = (self.t + 1) * self.batch_data_num
         self.data = self.alldata[start:end,:]
+        self.target = self.alltarget[start:end]
         if self.normalize:
             self.data[:, self.normalize_indices] \
                 = (self.data[:, self.normalize_indices] - self.mu) / self.std
-    
