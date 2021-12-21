@@ -159,33 +159,33 @@ if __name__ == '__main__':
         if draw_boundary:
             draw_decision_boundary(data_loader, F, device, x_range=trainset.x_range, y_range=trainset.y_range, newfig=True, db_color='b')         
         
+        classifier_list.append(copy.deepcopy(F))
+        
+        print(f'Get data softmax {t}')
+        aug_data_loader = Data.DataLoader(aug_trainset, batch_size=batch_size, 
+                                          shuffle=False, num_workers=num_workers)
+        # time_window * n_sample * dim
+        data_softmax_history = []
+        for i in range(len(classifier_list)):
+            _, _, log = test(aug_data_loader, classifier_list[i], device, return_softmax=True)
+            data_softmax_history.append(log)
+        
+        if t > 0:
+            print(f'Train dynamic predictor {t}')
+            softmax_dataset = SoftmaxDataset(data_softmax_history, mode='train')
+            softmax_data_loader = Data.DataLoader(softmax_dataset, batch_size=batch_size, 
+                                                  shuffle=True, num_workers=num_workers)
+            for i in range(d_epochs):
+                print('Epoch:', i+1)
+                train_dynamic(softmax_data_loader, DP, d_optimizer, device)
+                loss = test_dynamic(softmax_data_loader, DP, device)
+                print(f'loss:{loss}')
+        
+        if len(classifier_list) > time_window:
+            classifier_list.pop(0)
+            data_softmax_history.pop(0)        
+        
         if last_step_method != 'none':
-            classifier_list.append(copy.deepcopy(F))
-        
-            print(f'Get data softmax {t}')
-            aug_data_loader = Data.DataLoader(aug_trainset, batch_size=batch_size, 
-                                        shuffle=False, num_workers=num_workers)
-            # time_window * n_sample * dim
-            data_softmax_history = []
-            for i in range(len(classifier_list)):
-                _, _, log = test(aug_data_loader, classifier_list[i], device, return_softmax=True)
-                data_softmax_history.append(log)
-        
-            if t > 0:
-                print(f'Train dynamic predictor {t}')
-                softmax_dataset = SoftmaxDataset(data_softmax_history, mode='train')
-                softmax_data_loader = Data.DataLoader(softmax_dataset, batch_size=batch_size, 
-                                                      shuffle=True, num_workers=num_workers)
-                for i in range(d_epochs):
-                    print('Epoch:', i+1)
-                    train_dynamic(softmax_data_loader, DP, d_optimizer, device)
-                    loss = test_dynamic(softmax_data_loader, DP, device)
-                    print(f'loss:{loss}')
-        
-            if len(classifier_list) > time_window:
-                classifier_list.pop(0)
-                data_softmax_history.pop(0)
-            
             if t >= activate_dynamic_t:
                 print(f'Predict data softmax {t+1}')
                 softmax_dataset = SoftmaxDataset(data_softmax_history, mode='test')
