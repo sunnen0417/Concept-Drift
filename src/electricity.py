@@ -32,7 +32,7 @@ def one_hot(df, cat_feats):
 
 class ElectricityDataset(Data.Dataset):
 
-    def __init__(self, normalize = True):
+    def __init__(self, normalize = True, batch_days = 30):
         super(ElectricityDataset, self).__init__()
         self.base_dir = 'datasets'
         self.dataset_dir = 'electricity'
@@ -45,6 +45,7 @@ class ElectricityDataset(Data.Dataset):
             os.system('wget https://datahub.io/machine-learning/electricity/r/electricity.csv')
 
         # self.num_batch = 943
+        self.batch_days = batch_days
 
         self.all_data, self.data = [], []
         self.all_target, self.target = [], []
@@ -85,7 +86,7 @@ class ElectricityDataset(Data.Dataset):
         self.all_data.append(data[_:, 1:-1])
         self.all_target.append(data[_:, -1])
 
-        self.num_batch = len(self.all_data)
+        self.num_batch = len(self.all_data) // self.batch_days
 
         # numeric features: [0, 1, 2, 3, 4, 5]
         self.normalize_indices = [0, 1, 2, 3, 4, 5]
@@ -96,8 +97,15 @@ class ElectricityDataset(Data.Dataset):
 
     def set_t(self, t):
         self.t = t
-        self.data = np.array(self.all_data[t], dtype='float32')
-        self.target = np.array(self.all_target[t], dtype='int64')
+        self.data = np.concatenate(
+            self.all_data[t * self.batch_days : (t + 1) * self.batch_days],
+            axis = 0, dtype = 'float32'
+        )
+        self.target = np.concatenate(
+            self.all_target[t * self.batch_days : (t + 1) * self.batch_days],
+            axis = 0, dtype = 'float32'
+        )
+        self.target = np.array(self.target, dtype = 'int64')
 
         if self.normalize:
             self.data[:, self.normalize_indices] \
