@@ -46,7 +46,27 @@ class BufferDataset(Data.Dataset):
 
     def __len__(self):
         return len(self.target) 
-    
+
+class StoreDataset(Data.Dataset):
+    def __init__(self):
+        super(StoreDataset, self).__init__()
+        self.data = None
+        self.target = None
+
+    def __getitem__(self, index):
+        return torch.FloatTensor(self.data[index]), self.target[index]
+
+    def __len__(self):
+        return len(self.target)
+
+    def append(self, new_data, new_target):
+        if self.data is None:
+            self.data = new_data
+            self.target = new_target
+        else:
+            self.data = np.r_[self.data, new_data]
+            self.target = np.r_[self.target, new_target]
+
 def get_translate_concept(s, e, slice):
     concept = []
     for i in range(slice+1):
