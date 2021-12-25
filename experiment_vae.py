@@ -77,10 +77,11 @@ if __name__ == '__main__':
     draw_boundary = False
 
     # Dataset
-    trainset = dataset_dict[args.dataset]()
+    trainset = dataset_dict[args.dataset]
     num_batch = trainset.num_batch
     dim = trainset.data.shape[1]
     classes = trainset.num_class
+    cate_feat = trainset.cate_feat
 
     # Visualize the decision boundary if the dataset is suitable 
     if dim == 2 and classes == 2:
@@ -106,8 +107,8 @@ if __name__ == '__main__':
     vae_list = []
     vae_optimizer_list = []
     for i in range(classes):
-        hidden_size = max(int(dim*3/2), 2)
-        latent_size = max(int(dim/8), 1)
+        hidden_size = max(2*dim, 2)
+        latent_size = max(int(dim/4), 1)
         vae_list.append(VAE(feat_size=dim, hidden_size=hidden_size, latent_size=latent_size))
         vae_optimizer_list.append(optim.Adam(vae_list[i].parameters(), lr=vae_lr, weight_decay=vae_decay))
     
@@ -132,7 +133,7 @@ if __name__ == '__main__':
         aug_data = []
         aug_label = []
         for i in range(classes):
-            data = sample(vae_list[i], theta, sample_n, device, batch_size=batch_size, num_workers=num_workers)
+            data = sample(vae_list[i], theta, sample_n, cate_feat, device, batch_size=batch_size, num_workers=num_workers)
             labels = np.full(len(data), i)
             aug_data += data.tolist()
             aug_label += labels.tolist()

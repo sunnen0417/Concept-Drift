@@ -68,7 +68,7 @@ if __name__ == '__main__':
     draw_boundary = False
     
     # Dataset
-    trainset = dataset_dict[args.dataset]()
+    trainset = dataset_dict[args.dataset]
     storeset = StoreDataset()
     num_batch = trainset.num_batch
     dim = trainset.data.shape[1]

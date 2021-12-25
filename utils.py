@@ -247,17 +247,39 @@ def draw_decision_boundary(data_loader, F, device, x_range=None, y_range=None, n
     
 # reconstruction loss
 class ReconstructionLoss(nn.Module):
-    def __init__(self, reduction=True):
+    def __init__(self, cate_feat=[], reduction=True):
         super(ReconstructionLoss, self).__init__()
-        self.mse_loss = nn.MSELoss(reduction='none')
+        self.cate_feat = cate_feat
         self.reduction = reduction
+        self.mse_loss = nn.MSELoss(reduction='none')
+        self.bce_loss = nn.BCEWithLogitsLoss(reduction='none')
+        self.cross_entropy = nn.CrossEntropyLoss(reduction='none')
+        self.binary_cate_feat = []
+        self.cate_feat_flatten = []
+        for l in self.cate_feat:
+            if len(l) == 1:
+                self.binary_cate_feat += l
+            self.cate_feat_flatten += l
 
     def forward(self, output, target): 
         # output: reconstructed samples; target: real samples
+        total_loss = 0
+        # binary cate. features
+        if len(self.binary_cate_feat) > 0:
+            total_loss += torch.sum(self.bce_loss(output[:, self.binary_cate_feat], target[:, self.binary_cate_feat]), dim=1)
+        # cate. features
+        for l in self.cate_feat:
+            if len(l) > 1:
+                labels = torch.argmax(target[:, l], dim=1)
+                total_loss += self.cross_entropy(output[:, l], labels)
+        # numerical features
+        numeric_idx = [i for i in range(output.size(1)) if i not in self.cate_feat_flatten]
+        total_loss += torch.sum(self.mse_loss(output[:, numeric_idx], target[:, numeric_idx]), dim=1)
+
         if self.reduction:
-            return torch.mean(torch.sum(self.mse_loss(output, target), dim=1))
+            return torch.mean(total_loss)
         else:
-            return torch.sum(self.mse_loss(output, target), dim=1)
+            return total_loss
     
 # extension loss
 class ExtentionLoss(nn.Module):
@@ -290,24 +312,26 @@ class KLDLoss(nn.Module):
     
 # wrap loss
 class WrapLoss(nn.Module):
-    def __init__(self, reduction=False):
+    def __init__(self, cate_feat=[], reduction=False):
         super(WrapLoss, self).__init__()
+        self.cate_feat = cate_feat
         self.reduction = reduction
-        self.r_loss = ReconstructionLoss(self.reduction)
+        self.r_loss = ReconstructionLoss(self.cate_feat, self.reduction)
         self.e_loss = ExtentionLoss(self.reduction)
         
     def forward(self, output, target, extension):
         # output: reconstructed samples; target: real samples; extension: logits
         d = output.size(1)
-
+    
         return self.r_loss(output, target) / d + self.e_loss(extension)
-        
+
 # loss for positive samples
 class PositiveLoss(nn.Module):
-    def __init__(self, reduction=True):
+    def __init__(self, cate_feat=[], reduction=True):
         super(PositiveLoss, self).__init__()
+        self.cate_feat = cate_feat
         self.reduction = reduction
-        self.r_loss = ReconstructionLoss(self.reduction)
+        self.r_loss = ReconstructionLoss(self.cate_feat, self.reduction)
         self.e_loss = ExtentionLoss(self.reduction)
         self.k_loss = KLDLoss(self.reduction)
         
@@ -328,9 +352,10 @@ class NegativeLoss(nn.Module):
     
 # Total cost (reduction must be True)
 class JLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, cate_feat=[]):
         super(JLoss, self).__init__()
-        self.p_loss = PositiveLoss(reduction=True)
+        self.cate_feat = cate_feat
+        self.p_loss = PositiveLoss(cate_feat=self.cate_feat, reduction=True)
         self.n_loss = NegativeLoss(reduction=True)
         
     def forward(self, output, target, extension, mu, logvar, label):
@@ -351,10 +376,10 @@ class JLoss(nn.Module):
         return p - n
          
 # Train VAE
-def train_vae(train_loader, vae, optimizer, device):
+def train_vae(train_loader, vae, optimizer, cate_feat, device):
     vae.to(device)
     vae.train()
-    criterion = JLoss()
+    criterion = JLoss(cate_feat=cate_feat)
     for data, target in train_loader:
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
@@ -364,11 +389,11 @@ def train_vae(train_loader, vae, optimizer, device):
         optimizer.step()
         
 # Test VAE
-def test_vae(test_loader, vae, theta, device):
+def test_vae(test_loader, vae, theta, cate_feat, device):
     vae.to(device)
     vae.eval()
-    criterion1 = JLoss()
-    criterion2 = WrapLoss(reduction=False)
+    criterion1 = JLoss(cate_feat=cate_feat)
+    criterion2 = WrapLoss(cate_feat=cate_feat, reduction=False)
     isPass = True
     with torch.no_grad():
         total_loss1 = 0
@@ -393,21 +418,22 @@ def test_vae(test_loader, vae, theta, device):
     return total_loss1 * test_loader.batch_size / len(test_loader.dataset), correct / len(test_loader.dataset), isPass
 
 # Train VAE with several epochs
-def train_epochs_vae(train_loader, vae, optimizer, epochs, theta, device):
+def train_epochs_vae(train_loader, vae, optimizer, epochs, theta, cate_feat, device):
     for i in range(epochs):
         print('Epoch:', i+1)
-        train_vae(train_loader, vae, optimizer, device)
-        loss, acc, isPass = test_vae(train_loader, vae, theta, device)
+        train_vae(train_loader, vae, optimizer, cate_feat, device)
+        loss, acc, isPass = test_vae(train_loader, vae, theta, cate_feat, device)
         print(f'loss:{loss}, acc:{acc}')
         if isPass:
             print('Early stopping!')
             break
 
 # Sample data from VAE
-def sample(vae, theta, sample_n, device, batch_size=64, num_workers=0):
+def sample(vae, theta, sample_n, cate_feat, device, batch_size=64, num_workers=0):
     vae.to(device)
     vae.eval()
-    criterion = WrapLoss(reduction=False)
+    criterion = WrapLoss(cate_feat=cate_feat, reduction=False)
+    sigmoid = nn.Sigmoid()
     n = sample_n * 2
     d = vae.latent_size
     a = np.random.randn(n, d)
@@ -420,6 +446,19 @@ def sample(vae, theta, sample_n, device, batch_size=64, num_workers=0):
         for r, _ in data_loader:
             r = r.to(device)
             feature, extension = vae.decode(r)
+            for l in cate_feat:
+                if len(l) == 1:
+                    sigmoid_feature = sigmoid(feature[:, l])
+                    idx = sigmoid_feature >= 0.5
+                    sigmoid_feature[idx] = 1.0
+                    sigmoid_feature[~idx] = 0.0
+                    feature[:, l] = sigmoid_feature
+                else:
+                    idx = torch.argmax(feature[:, l], dim=1)
+                    one_hot_feature = torch.zeros_like(feature[:, l])
+                    one_hot_feature[np.arange(one_hot_feature.size(0)), idx]
+                    feature[:, l] = one_hot_feature
+
             feature2, extension2, mu, logvar = vae(feature, sample=False)
             loss = criterion(feature2, feature, extension2)
             idx = loss < theta
@@ -435,6 +474,7 @@ def update_all_vaes(train_loader, vae_list, optimizer_list, epochs, theta, sampl
     trainset = train_loader.dataset
     batch_size = train_loader.batch_size
     num_workers = train_loader.num_workers
+    cate_feat = trainset.cate_feat
     for i in range(M):
         # extract class i data
         idx = trainset.target == i
@@ -449,12 +489,12 @@ def update_all_vaes(train_loader, vae_list, optimizer_list, epochs, theta, sampl
             if j != i:
                 data_loader = Data.DataLoader(S, batch_size=batch_size, 
                                         shuffle=True, num_workers=num_workers)
-                loss, acc, isPass = test_vae(data_loader, vae_list[j], theta, device)
+                loss, acc, isPass = test_vae(data_loader, vae_list[j], theta, cate_feat, device)
                 if not isPass:
                     print(f'Uncovering VAE {j} on data with class {i}')
                     # positive samples
                     S_samples = S.data.numpy()
-                    wrap_samples = sample(vae_list[j], theta, sample_n, device, batch_size=batch_size, num_workers=num_workers)
+                    wrap_samples = sample(vae_list[j], theta, sample_n, cate_feat, device, batch_size=batch_size, num_workers=num_workers)
                     toCollect = []
                     for k in range(len(wrap_samples)):
                         dist = np.linalg.norm(S_samples-wrap_samples[k], axis=1)
@@ -472,7 +512,7 @@ def update_all_vaes(train_loader, vae_list, optimizer_list, epochs, theta, sampl
                     negative_samples = []
                     for k in range(M):
                         if k != j:
-                            wrap_samples = sample(vae_list[k], theta, sample_n, device, batch_size=batch_size, num_workers=num_workers)
+                            wrap_samples = sample(vae_list[k], theta, sample_n, cate_feat, device, batch_size=batch_size, num_workers=num_workers)
                             negative_samples += wrap_samples.tolist()
                     negative_samples += S_samples.tolist()
                     negative_samples = np.array(negative_samples)
@@ -484,19 +524,19 @@ def update_all_vaes(train_loader, vae_list, optimizer_list, epochs, theta, sampl
                     uncover_dataset = BufferDataset(samples, labels, target_type='hard')
                     data_loader = Data.DataLoader(uncover_dataset, batch_size=batch_size, 
                                             shuffle=True, num_workers=num_workers)
-                    train_epochs_vae(data_loader, vae_list[j], optimizer_list[j], epochs, theta, device)
+                    train_epochs_vae(data_loader, vae_list[j], optimizer_list[j], epochs, theta, cate_feat, device)
         # cover i-th vae
         # positive samples
         print(f'Covering VAE {i} on data with class {i}')
         S_samples = S.data.numpy()
-        wrap_samples = sample(vae_list[i], theta, sample_n, device, batch_size=batch_size, num_workers=num_workers)
+        wrap_samples = sample(vae_list[i], theta, sample_n, cate_feat, device, batch_size=batch_size, num_workers=num_workers)
         positive_samples = S_samples.tolist() + wrap_samples.tolist()
         positive_samples = np.array(positive_samples)
         # negative samples
         negative_samples = []
         for j in range(M):
             if j != i:
-                wrap_samples = sample(vae_list[j], theta, sample_n, device, batch_size=batch_size, num_workers=num_workers)
+                wrap_samples = sample(vae_list[j], theta, sample_n, cate_feat, device, batch_size=batch_size, num_workers=num_workers)
                 negative_samples += wrap_samples.tolist()
         negative_samples = np.array(negative_samples)
         
@@ -507,4 +547,4 @@ def update_all_vaes(train_loader, vae_list, optimizer_list, epochs, theta, sampl
         cover_dataset = BufferDataset(samples, labels, target_type='hard')
         data_loader = Data.DataLoader(cover_dataset, batch_size=batch_size, 
                                 shuffle=True, num_workers=num_workers)        
-        train_epochs_vae(data_loader, vae_list[i], optimizer_list[i], epochs, theta, device)
+        train_epochs_vae(data_loader, vae_list[i], optimizer_list[i], epochs, theta, cate_feat, device)

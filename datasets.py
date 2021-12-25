@@ -135,6 +135,7 @@ class TranslateDataset(Data.Dataset):
         self.target = []
         self.set_t(self.t)
         self.num_class = 2
+        self.cate_feat = []
     
     def __getitem__(self, index):
         return torch.FloatTensor(self.data[index]), self.target[index]
@@ -185,7 +186,8 @@ class RotateDataset(Data.Dataset):
         self.target = []
         self.set_t(self.t)
         self.num_class = 2
-        
+        self.cate_feat = []
+
     def __getitem__(self, index):
         return torch.FloatTensor(self.data[index]), self.target[index]
 
@@ -259,6 +261,7 @@ class HyperballDataset(Data.Dataset):
         self.target = []
         self.set_t(self.t)
         self.num_class = 2
+        self.cate_feat = []
         
     def __getitem__(self, index):
         return torch.FloatTensor(self.data[index]), self.target[index]
@@ -306,6 +309,7 @@ class GasSensorDataset(Data.Dataset):
         self.t = 0
         self.set_t(self.t)
         self.num_class = 6
+        self.cate_feat = []
             
     def __getitem__(self, index):
         return torch.FloatTensor(self.data[index]), self.target[index]
@@ -377,7 +381,8 @@ class CovertypeDataset(Data.Dataset):
         self.t = 0
         self.set_t(self.t)
         self.num_class = 7
-            
+        self.cate_feat = [[i] for i in range(10, 54)]
+
     def __getitem__(self, index):
         return torch.FloatTensor(self.data[index]), self.target[index]
 
@@ -418,9 +423,239 @@ class CovertypeDataset(Data.Dataset):
             
         if self.normalize:
             self.data[:, 0:10] = (self.data[:, 0:10] - self.mu) / self.std
+
+# KDD99 dataset
+def one_hot_kdd(df, one_hot_features):
+    for feature in one_hot_features:
+        temp = pd.get_dummies(df[feature], prefix = feature)
+        df = df.join(temp)
+        df = df.drop(feature, axis=1)
+    return df
+    
+class KDD99Dataset(Data.Dataset):
+    def __init__(self, normalize=True):
+        super(KDD99Dataset, self).__init__()
+        self.base_dir = 'datasets'
+        self.dataset_dir = 'kdd99'
+        if os.path.exists(os.path.join(self.base_dir, self.dataset_dir)):
+            print(f'{os.path.join(self.base_dir, self.dataset_dir)} exists!')
+        else:
+            # download the dataset
+            os.makedirs(os.path.join(self.base_dir, self.dataset_dir), exist_ok=True)
+            os.chdir(os.path.join(self.base_dir, self.dataset_dir))
+            os.system('wget https://datahub.io/machine-learning/kddcup99/r/kddcup99.csv')  
+            os.chdir('../..')
+            #####
+        self.alldata = []
+        self.data = []
+        self.target = []
+        self.num_batch = 10
+        self.normalize = normalize
+        self.batch_data_num = 0
+        self.normalize_indices = []
+        self.mu = 0
+        self.std = 0
+        self.preprocess('datasets/kdd99/kddcup99.csv')
+        self.t = 0
+        self.set_t(self.t)
+        self.num_class = 2
             
-dataset_dict = {'translate':TranslateDataset,
-                'rotate':RotateDataset,
-                'ball':HyperballDataset,
-                'gas':GasSensorDataset,
-                'covertype':CovertypeDataset}
+    def __getitem__(self, index):
+        return torch.FloatTensor(self.data[index]), self.target[index]
+
+    def __len__(self):
+        return len(self.target) 
+
+    def preprocess(self, file_path):
+        df = pd.read_csv(file_path)
+        one_hot_features = ['protocol_type', 'service', 'flag']
+        df = one_hot_kdd(df, one_hot_features)
+        f = lambda x: 0 if x == 'normal' else 1
+        df['label'] = df['label'].map(f) 
+        self.alldata = df.drop(['label'],axis=1).to_numpy()
+        self.alltarget = df['label'].to_numpy()
+        self.batch_data_num = int(self.alldata.shape[0] / self.num_batch)
+
+        self.normalize_indices = [0,1,2,4,5,6,7,9,12,13,14,15,16,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37]
+        self.mu = np.mean(self.alldata[:self.batch_data_num, self.normalize_indices], axis = 0)
+        self.std = np.maximum(np.std(self.alldata[:self.batch_data_num, self.normalize_indices]), 1e-5)
+        self.cate_feat = [[3], [8], [10], [11], [17], [18], list(range(38,41)), list(range(41,107)), list(range(107,118))]
+
+    def set_t(self, t):
+        self.t = t
+        start = self.t * self.batch_data_num
+        end = (self.t + 1) * self.batch_data_num
+        self.data = self.alldata[start:end,:]
+        self.target = self.alltarget[start:end]
+        if self.normalize:
+            self.data[:, self.normalize_indices] \
+                = (self.data[:, self.normalize_indices] - self.mu) / self.std
+
+# Electricity dataset
+
+def one_hot_electricity(df, cat_feats):
+    """Return dataframe after one-hot encoding
+    Args
+        df        -- the dataframe containing data
+        cat_feats -- the categorical features
+    """
+
+    for feat in cat_feats:
+        one_hot = pd.get_dummies(df[feat], prefix = feat)
+        df = df.drop(columns = [feat])
+        df = df.merge(one_hot, left_index = True, right_index = True)
+
+    return df
+
+
+class ElectricityDataset(Data.Dataset):
+
+    def __init__(self, normalize = True, batch_days = 30):
+        super(ElectricityDataset, self).__init__()
+        self.base_dir = 'datasets'
+        self.dataset_dir = 'electricity'
+        if os.path.exists(os.path.join(self.base_dir, self.dataset_dir)):
+            print(f'{os.path.join(self.base_dir, self.dataset_dir)} exists!')
+            os.chdir(os.path.join(self.base_dir, self.dataset_dir))
+        else:
+            os.makedirs(os.path.join(self.base_dir, self.dataset_dir), exist_ok=True)
+            os.chdir(os.path.join(self.base_dir, self.dataset_dir))
+            os.system('wget https://datahub.io/machine-learning/electricity/r/electricity.csv')
+
+        # self.num_batch = 943
+        self.batch_days = batch_days
+
+        self.all_data, self.data = [], []
+        self.all_target, self.target = [], []
+        self.generate('electricity.csv')
+
+        os.chdir('../../')
+
+        self.normalize = normalize
+        self.t = 0
+        self.set_t(self.t)
+        self.num_class = 2
+        self.cate_feat = [list(range(6, 13))]
+
+    def __getitem__(self, index):
+        return torch.FloatTensor(self.data[index]), self.target[index]
+
+    def __len__(self):
+        return self.target.shape[0]
+
+    def generate(self, file_path):
+        df = pd.read_csv(file_path)
+        df['class'] = pd.factorize(df['class'])[0]
+        df = one_hot_electricity(df, ['day'])
+
+        # put 'class' column to the last column
+        df_class = df.reindex(columns=['class'])
+        df = df.drop(columns = ['class'])
+        df = df.merge(df_class, left_index = True, right_index = True)
+
+        data = df.to_numpy()
+
+        _ = 0
+        for i in range(1, data.shape[0]):
+            if data[i - 1][0] != data[i][0]:
+                self.all_data.append(data[_:i, 1:-1])
+                self.all_target.append(data[_:i, -1])
+                _ = i + 1
+
+        self.all_data.append(data[_:, 1:-1])
+        self.all_target.append(data[_:, -1])
+
+        self.num_batch = len(self.all_data) // self.batch_days
+
+        # numeric features: [0, 1, 2, 3, 4, 5]
+        self.normalize_indices = [0, 1, 2, 3, 4, 5]
+        self.mu = np.mean(self.all_data[0][:, self.normalize_indices], axis = 0)
+        self.std = np.maximum(np.std(self.all_data[0][:, self.normalize_indices]), 1e-5)
+
+        return
+
+    def set_t(self, t):
+        self.t = t
+        self.data = np.concatenate(
+            self.all_data[t * self.batch_days : (t + 1) * self.batch_days],
+            axis = 0).astype('float32')
+
+        self.target = np.concatenate(
+            self.all_target[t * self.batch_days : (t + 1) * self.batch_days],
+            axis = 0).astype('float32')
+
+        self.target = np.array(self.target, dtype = 'int64')
+
+        if self.normalize:
+            self.data[:, self.normalize_indices] \
+                = (self.data[:, self.normalize_indices] - self.mu) / self.std
+
+        return
+
+# ONP dataset
+class ONPDataset(Data.Dataset):
+    def __init__(self, normalize=True):
+        super(ONPDataset, self).__init__()
+        self.base_dir = 'datasets'
+        self.dataset_dir = 'onp'
+        if os.path.exists(os.path.join(self.base_dir, self.dataset_dir)):
+            print(f'{os.path.join(self.base_dir, self.dataset_dir)} exists!')
+        else:
+            # download the dataset
+            os.makedirs(self.base_dir, exist_ok=True)
+            os.chdir(self.base_dir)
+            os.system('wget https://archive.ics.uci.edu/ml/machine-learning-databases/00332/OnlineNewsPopularity.zip')
+            os.system('unzip OnlineNewsPopularity.zip')
+            os.system('mv OnlineNewsPopularity onp')
+            os.system('rm -f OnlineNewsPopularity.zip')
+            os.chdir('..')
+            
+        self.df = pd.read_csv(os.path.join(self.base_dir, self.dataset_dir, 'OnlineNewsPopularity.csv'))
+        self.df['popular'] = [1 if sh >= 1400 else 0 for sh in self.df[' shares']]
+        self.month_list = self.df.url.str.slice(20, 27).unique()
+        self.normalize_indices = list(range(0,11)) +list(range(17,29)) + list(range(37,58)) 
+            
+        self.num_batch = len(self.month_list)
+        self.data = []
+        self.target = []
+        self.normalize= normalize
+        self.mu = None
+        self.std = None
+        self.t = 0
+        self.set_t(self.t)
+        self.num_class = 2
+        self.cate_feat = [[i] for i in list(range(11,17))+list(range(29,37))]
+
+    def __getitem__(self, index):
+        return torch.FloatTensor(self.data[index]), self.target[index]
+
+    def __len__(self):
+        return len(self.target) 
+    
+    def set_t(self, t):
+        self.t = t
+        self.data = []
+        self.target = []
+        
+        keep = self.df.url.str.slice(20, 27) == self.month_list[self.t]
+        self.target = self.df.values[keep, -1]
+        self.data = self.df.values[keep, 2:-2]         
+        
+        self.data = np.array(self.data, dtype='float32')
+        self.target = np.array(self.target, dtype='int64')
+        
+        if t == 0:
+            self.mu = np.mean(self.data[:, self.normalize_indices], axis=0)
+            self.std = np.maximum(np.std(self.data[:, self.normalize_indices], axis=0), 1e-5)
+            
+        if self.normalize:
+            self.data[:, self.normalize_indices] = (self.data[:, self.normalize_indices] - self.mu) / self.std
+            
+dataset_dict = {'translate':TranslateDataset(),
+                'rotate':RotateDataset(),
+                'ball':HyperballDataset(),
+                'gas':GasSensorDataset(normalize=True),
+                'covertype':CovertypeDataset(normalize=True),
+                'kdd':KDD99Dataset(normalize=True),
+                'electricity':ElectricityDataset(normalize=False), #The dataset has already been normalized originally
+                'onp':ONPDataset(normalize=True)}
