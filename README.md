@@ -33,7 +33,7 @@ python3 experiment_vae.py --last_step_method soft --dataset gas
 --d_decay: set dynamic predictor weight decay (type=float, default=0)
 --activate_dynamic_t: set when to activate the dynamic predictor for prediction (type=int, default=3)
 --time_window: set the maximum input vector sequence length of the dynamic predictor (type=int, default=3)
---dataset: set the dataset for the experiment (type=str, default='translate', option={'translate', 'rotate', 'ball', 'gas', 'covertype'})
+--dataset: set the dataset for the experiment (type=str, default='translate', option={'translate', 'rotate', 'ball', 'gas', 'covertype', ...})
 --classifier: set the classifier type (type=str, default='lr', option={'lr':logistic regression, 'mlp':neural network})
 --device: set device (type=str, default='cuda:0', option={'cpu', 'cuda:0', 'cuda:1', ...})
 ```
@@ -52,7 +52,7 @@ python3 experiment_vae.py --last_step_method soft --dataset gas
 --d_decay: set dynamic predictor weight decay (type=float, default=0)
 --activate_dynamic_t: set when to activate the dynamic predictor for prediction (type=int, default=3)
 --time_window: set the maximum input vector sequence length of the dynamic predictor (type=int, default=3)
---dataset: set the dataset for the experiment (type=str, default='translate', option={'translate', 'rotate', 'ball', 'gas', 'covertype'})
+--dataset: set the dataset for the experiment (type=str, default='translate', option={'translate', 'rotate', 'ball', 'gas', 'covertype', ...})
 --classifier: set the classifier type (type=str, default='lr', option={'lr':logistic regression, 'mlp':neural network})
 --ckpt_dir: the directory to store checkpoints of the history classifier (type=str, default='./ckpt_only')
 --device: set device (type=str, default='cuda:0', option={'cpu', 'cuda:0', 'cuda:1', ...})
@@ -72,7 +72,7 @@ python3 experiment_vae.py --last_step_method soft --dataset gas
 --d_decay: set dynamic predictor weight decay (type=float, default=0)
 --activate_dynamic_t: set when to activate the dynamic predictor for prediction (type=int, default=3)
 --time_window: set the maximum input vector sequence length of the dynamic predictor (type=int, default=3)
---dataset: set the dataset for the experiment (type=str, default='translate', option={'translate', 'rotate', 'ball', 'gas', 'covertype'})
+--dataset: set the dataset for the experiment (type=str, default='translate', option={'translate', 'rotate', 'ball', 'gas', 'covertype', ...})
 --classifier: set the classifier type (type=str, default='lr', option={'lr':logistic regression, 'mlp':neural network})
 --ckpt_dir: the directory to store checkpoints of the history classifier (type=str, default='./ckpt_all')
 --device: set device (type=str, default='cuda:0', option={'cpu', 'cuda:0', 'cuda:1', ...})
@@ -98,7 +98,7 @@ python3 experiment_vae.py --last_step_method soft --dataset gas
 --eps: set ball radius to uncover a sample (type=float, default=0.1)
 --activate_dynamic_t: set when to activate the dynamic predictor for prediction (type=int, default=3)
 --time_window: set the maximum input vector sequence length of the dynamic predictor (type=int, default=3)
---dataset: set the dataset for the experiment (type=str, default='translate', option={'translate', 'rotate', 'ball', 'gas', 'covertype'})
+--dataset: set the dataset for the experiment (type=str, default='translate', option={'translate', 'rotate', 'ball', 'gas', 'covertype', ...})
 --classifier: set the classifier type (type=str, default='lr', option={'lr':logistic regression, 'mlp':neural network})
 --device: set device (type=str, default='cuda:0', option={'cpu', 'cuda:0', 'cuda:1', ...})
 ```
@@ -106,3 +106,4 @@ python3 experiment_vae.py --last_step_method soft --dataset gas
 ## Note
 * For --theta, --sample_n and --eps in experiment_vae.py, please refer to https://link.springer.com/article/10.1007%2Fs00521-021-06154-9
 * If --last_step_method is set to 'none', then the whole algorithm is equivalent to finetuning, and --activate_dynamic_t has no effect because the dynamic predictor won't be used for prediction
+* For more information about the options of --dataset, please see dataset_dict in datasets.py
