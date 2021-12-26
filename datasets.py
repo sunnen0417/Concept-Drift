@@ -624,7 +624,7 @@ class ONPDataset(Data.Dataset):
         self.t = 0
         self.set_t(self.t)
         self.num_class = 2
-        self.cate_feat = [[i] for i in list(range(11,17))+list(range(29,37))]
+        self.cate_feat = [[11], [12], [13], [14], [15], [16], list(range(29, 36)), [36]]
 
     def __getitem__(self, index):
         return torch.FloatTensor(self.data[index]), self.target[index]
