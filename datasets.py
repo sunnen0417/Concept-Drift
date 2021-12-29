@@ -27,6 +27,7 @@ class KDD99Dataset(Data.Dataset):
             #####
         self.alldata = []
         self.data = []
+        self.alltarget = []
         self.target = []
         self.num_batch = 10
         self.normalize = normalize
@@ -37,7 +38,7 @@ class KDD99Dataset(Data.Dataset):
         self.preprocess('datasets/kdd99/kddcup99.csv')
         self.t = 0
         self.set_t(self.t)
-        self.num_class = 2
+        self.num_class = 23
             
     def __getitem__(self, index):
         return torch.FloatTensor(self.data[index]), self.target[index]
@@ -49,8 +50,7 @@ class KDD99Dataset(Data.Dataset):
         df = pd.read_csv(file_path)
         one_hot_features = ['protocol_type', 'service', 'flag']
         df = one_hot(df, one_hot_features)
-        f = lambda x: 0 if x == 'normal' else 1
-        df['label'] = df['label'].map(f) 
+        df['label'] = pd.factorize(df['label'])[0]
         self.alldata = df.drop(['label'],axis=1).to_numpy()
         self.alltarget = df['label'].to_numpy()
         self.batch_data_num = int(self.alldata.shape[0] / self.num_batch)
@@ -68,3 +68,4 @@ class KDD99Dataset(Data.Dataset):
         if self.normalize:
             self.data[:, self.normalize_indices] \
                 = (self.data[:, self.normalize_indices] - self.mu) / self.std
+    
