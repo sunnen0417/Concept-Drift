@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.utils.data as Data
 import matplotlib.pyplot as plt
-from datasets import BufferDataset
+from datasets import BufferDataset, SoftmaxDataset
 
 # Training
 def train(train_loader, F, optimizer, device):
@@ -548,3 +548,19 @@ def update_all_vaes(train_loader, vae_list, optimizer_list, epochs, theta, sampl
         data_loader = Data.DataLoader(cover_dataset, batch_size=batch_size, 
                                 shuffle=True, num_workers=num_workers)        
         train_epochs_vae(data_loader, vae_list[i], optimizer_list[i], epochs, theta, cate_feat, device)
+
+def split_train_valid(dataset, train_ratio=0.8):
+    mask = np.zeros(len(dataset), dtype=bool)
+    train_idx = np.random.choice(len(dataset), size=int(train_ratio*len(dataset)), replace=False)
+    mask[train_idx] = True
+    if dataset.__class__.__name__ == 'SoftmaxDataset':
+        tset = SoftmaxDataset(np.array(dataset.softmax_data)[:,mask], mode=dataset.mode)
+        vset = SoftmaxDataset(np.array(dataset.softmax_data)[:,~mask], mode=dataset.mode)
+    elif dataset.__class__.__name__ == 'BufferDataset':
+        tset = BufferDataset(dataset.data[mask], dataset.target[mask], target_type=dataset.target_type)
+        vset = BufferDataset(dataset.data[~mask], dataset.target[~mask], target_type=dataset.target_type)
+    else:
+        tset = BufferDataset(dataset.data[mask], dataset.target[mask], target_type='hard')
+        vset = BufferDataset(dataset.data[~mask], dataset.target[~mask], target_type='hard')
+
+    return tset, vset

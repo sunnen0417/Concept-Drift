@@ -36,6 +36,8 @@ python3 experiment_vae.py --last_step_method soft --dataset gas
 --dataset: set the dataset for the experiment (type=str, default='translate', option={'translate', 'rotate', 'ball', 'gas', 'covertype', ...})
 --classifier: set the classifier type (type=str, default='lr', option={'lr':logistic regression, 'mlp':neural network})
 --device: set device (type=str, default='cuda:0', option={'cpu', 'cuda:0', 'cuda:1', ...})
+--train_ratio: set the ratio of the training set while splitting (type=float, default=0.8)
+--patience: set the patience for early stopping (type=int, default=7)
 ```
 
 * experiment_only_all.py
@@ -56,6 +58,8 @@ python3 experiment_vae.py --last_step_method soft --dataset gas
 --classifier: set the classifier type (type=str, default='lr', option={'lr':logistic regression, 'mlp':neural network})
 --ckpt_dir: the directory to store checkpoints of the history classifier (type=str, default='./ckpt_only')
 --device: set device (type=str, default='cuda:0', option={'cpu', 'cuda:0', 'cuda:1', ...})
+--train_ratio: set the ratio of the training set while splitting (type=float, default=0.8)
+--patience: set the patience for early stopping (type=int, default=7)
 ```
 
 * experiment_all_all.py
@@ -76,6 +80,8 @@ python3 experiment_vae.py --last_step_method soft --dataset gas
 --classifier: set the classifier type (type=str, default='lr', option={'lr':logistic regression, 'mlp':neural network})
 --ckpt_dir: the directory to store checkpoints of the history classifier (type=str, default='./ckpt_all')
 --device: set device (type=str, default='cuda:0', option={'cpu', 'cuda:0', 'cuda:1', ...})
+--train_ratio: set the ratio of the training set while splitting (type=float, default=0.8)
+--patience: set the patience for early stopping (type=int, default=7)
 ```
 
 * experiment_vae.py
@@ -101,6 +107,8 @@ python3 experiment_vae.py --last_step_method soft --dataset gas
 --dataset: set the dataset for the experiment (type=str, default='translate', option={'translate', 'rotate', 'ball', 'gas', 'covertype', ...})
 --classifier: set the classifier type (type=str, default='lr', option={'lr':logistic regression, 'mlp':neural network})
 --device: set device (type=str, default='cuda:0', option={'cpu', 'cuda:0', 'cuda:1', ...})
+--train_ratio: set the ratio of the training set while splitting (type=float, default=0.8)
+--patience: set the patience for early stopping (type=int, default=7)
 ```
 
 ## Note

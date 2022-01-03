@@ -8,7 +8,7 @@ import torch.utils.data as Data
 import matplotlib.pyplot as plt
 from datasets import SoftmaxDataset, BufferDataset
 from datasets import dataset_dict
-from utils import train, test, train_soft, test_soft, train_dynamic, test_dynamic, predict_dynamic, train_cost_sensitive, test_cost_sensitive, draw_decision_boundary, sample, update_all_vaes
+from utils import train, test, train_soft, test_soft, train_dynamic, test_dynamic, predict_dynamic, train_cost_sensitive, test_cost_sensitive, draw_decision_boundary, sample, update_all_vaes, split_train_valid
 from models import LogisticRegression, MLP, DynamicPredictor, VAE
 import argparse
 
@@ -45,6 +45,8 @@ def get_parser():
     parser.add_argument('-d', '--dataset', type=str, default='translate') # see dataset_dict in datasets.py
     parser.add_argument('-c', '--classifier', type=str, default='lr') # 'lr':logistic regreesion, 'mlp':neural network
     parser.add_argument('-dv', '--device', type=str, default='cuda:0')
+    parser.add_argument('-tr', '--train_ratio', type=float, default=0.8)
+    parser.add_argument('-p', '--patience', type=int, default=7)
     return parser
 
 if __name__ == '__main__':
@@ -74,6 +76,8 @@ if __name__ == '__main__':
     eps = args.eps
     activate_dynamic_t = args.activate_dynamic_t
     time_window = args.time_window
+    train_ratio = args.train_ratio
+    patience = args.patience
     draw_boundary = False
 
     # Dataset
@@ -142,13 +146,35 @@ if __name__ == '__main__':
         aug_trainset = BufferDataset(aug_data, aug_label, target_type='hard')
         
         print(f'Train {t}')
-        aug_data_loader = Data.DataLoader(aug_trainset, batch_size=batch_size, 
+        tset, vset = split_train_valid(aug_trainset, train_ratio=train_ratio)
+        t_aug_data_loader = Data.DataLoader(tset, batch_size=batch_size, 
                                     shuffle=True, num_workers=num_workers)
+        v_aug_data_loader = Data.DataLoader(vset, batch_size=batch_size, 
+                                    shuffle=False, num_workers=num_workers)
+        best_acc = 0
+        best_F = None
+        best_opt_state_dict = None 
+        p = patience
         for i in range(epochs):
             print('Epoch:', i+1)
-            train(aug_data_loader, F, optimizer, device)
-            loss, acc = test(aug_data_loader, F, device)
-            print(f'loss:{loss}, acc:{acc}')
+            train(t_aug_data_loader, F, optimizer, device)
+            loss, acc = test(t_aug_data_loader, F, device)
+            print(f'Train loss:{loss}, acc:{acc}')
+            loss, acc = test(v_aug_data_loader, F, device)
+            print(f'Valid loss:{loss}, acc:{acc}')
+            if acc > best_acc:
+                best_acc = acc 
+                best_F = copy.deepcopy(F)
+                best_opt_state_dict = copy.deepcopy(optimizer.state_dict())
+                p = patience
+            else:
+                p -= 1
+                if p < 0:
+                    print('Early stopping!')
+                    break
+        F = best_F
+        optimizer = optim.Adam(F.parameters(), lr=lr, weight_decay=decay)
+        optimizer.load_state_dict(best_opt_state_dict)
         
         if t > 0:
             if draw_boundary:
@@ -174,14 +200,36 @@ if __name__ == '__main__':
         if t > 0:
             print(f'Train dynamic predictor {t}')
             softmax_dataset = SoftmaxDataset(data_softmax_history, mode='train')
-            softmax_data_loader = Data.DataLoader(softmax_dataset, batch_size=batch_size, 
+            tset, vset = split_train_valid(softmax_dataset, train_ratio=train_ratio)
+            t_softmax_data_loader = Data.DataLoader(tset, batch_size=batch_size, 
                                                   shuffle=True, num_workers=num_workers)
+            v_softmax_data_loader = Data.DataLoader(vset, batch_size=batch_size, 
+                                                  shuffle=False, num_workers=num_workers)
+            best_loss = float('inf')
+            best_DP = None
+            best_opt_state_dict = None 
+            p = patience
             for i in range(d_epochs):
                 print('Epoch:', i+1)
-                train_dynamic(softmax_data_loader, DP, d_optimizer, device)
-                loss = test_dynamic(softmax_data_loader, DP, device)
-                print(f'loss:{loss}')
-        
+                train_dynamic(t_softmax_data_loader, DP, d_optimizer, device)
+                loss = test_dynamic(t_softmax_data_loader, DP, device)
+                print(f'Train loss:{loss}')
+                loss = test_dynamic(v_softmax_data_loader, DP, device)
+                print(f'Valid loss:{loss}')
+                if loss < best_loss:
+                    best_loss = loss
+                    best_DP = copy.deepcopy(DP)
+                    best_opt_state_dict = copy.deepcopy(d_optimizer.state_dict())
+                    p = patience
+                else:
+                    p -= 1
+                    if p < 0:
+                        print('Early stopping!')
+                        break
+            DP = best_DP
+            d_optimizer = optim.AdamW(DP.parameters(), lr=d_lr, weight_decay=d_decay)
+            d_optimizer.load_state_dict(best_opt_state_dict)
+            
         if len(classifier_list) > time_window:
             classifier_list.pop(0)
             data_softmax_history.pop(0)        
@@ -197,33 +245,99 @@ if __name__ == '__main__':
                 print(f'Predict decision boundary {t+1}')
                 if last_step_method == 'soft':
                     aug_trainset = BufferDataset(aug_data, pred_next_softmax, target_type='soft')
-                    data_loader = Data.DataLoader(aug_trainset, batch_size=batch_size, 
+                    tset, vset = split_train_valid(aug_trainset, train_ratio=train_ratio)
+                    t_data_loader = Data.DataLoader(tset, batch_size=batch_size, 
                                                   shuffle=True, num_workers=num_workers)
+                    v_data_loader = Data.DataLoader(vset, batch_size=batch_size, 
+                                                  shuffle=False, num_workers=num_workers)
+                    best_loss = float('inf')
+                    best_F = None
+                    best_opt_state_dict = None 
+                    p = patience
                     for i in range(epochs):
                         print('Epoch:', i+1)
-                        train_soft(data_loader, F, optimizer, device)
-                        loss = test_soft(data_loader, F, device)
-                        print(f'loss:{loss}')
+                        train_soft(t_data_loader, F, optimizer, device)
+                        loss = test_soft(t_data_loader, F, device)
+                        print(f'Train loss:{loss}')
+                        loss = test_soft(v_data_loader, F, device)
+                        print(f'Valid loss:{loss}')
+                        if loss < best_loss:
+                            best_loss = loss
+                            best_F = copy.deepcopy(F)
+                            best_opt_state_dict = copy.deepcopy(optimizer.state_dict())
+                            p = patience
+                        else:
+                            p -= 1
+                            if p < 0:
+                                print('Early stopping!')
+                                break
+                    F = best_F
+                    optimizer = optim.Adam(F.parameters(), lr=lr, weight_decay=decay)
+                    optimizer.load_state_dict(best_opt_state_dict)
                 elif last_step_method == 'hard':
                     y = [np.argmax(s) for s in np.array(pred_next_softmax)] 
                     y = np.array(y, dtype='int64')
                     aug_trainset = BufferDataset(aug_data, y, target_type='hard')
-                    data_loader = Data.DataLoader(aug_trainset, batch_size=batch_size, 
+                    tset, vset = split_train_valid(aug_trainset, train_ratio=train_ratio)
+                    t_data_loader = Data.DataLoader(tset, batch_size=batch_size, 
                                                   shuffle=True, num_workers=num_workers)
+                    v_data_loader = Data.DataLoader(vset, batch_size=batch_size, 
+                                                  shuffle=False, num_workers=num_workers)
+                    best_acc = 0
+                    best_F = None
+                    best_opt_state_dict = None 
+                    p = patience
                     for i in range(epochs):
                         print('Epoch:', i+1)
-                        train(data_loader, F, optimizer, device)
-                        loss, acc = test(data_loader, F, device)
-                        print(f'loss:{loss}, acc:{acc}')
+                        train(t_data_loader, F, optimizer, device)
+                        loss, acc = test(t_data_loader, F, device)
+                        print(f'Train loss:{loss}, acc:{acc}')
+                        loss, acc = test(v_data_loader, F, device)
+                        print(f'Valid loss:{loss}, acc:{acc}')
+                        if acc > best_acc:
+                            best_acc = acc
+                            best_F = copy.deepcopy(F)
+                            best_opt_state_dict = copy.deepcopy(optimizer.state_dict())
+                            p = patience
+                        else:
+                            p -= 1
+                            if p < 0:
+                                print('Early stopping!')
+                                break
+                    F = best_F
+                    optimizer = optim.Adam(F.parameters(), lr=lr, weight_decay=decay)
+                    optimizer.load_state_dict(best_opt_state_dict)
                 elif last_step_method == 'cost':
                     aug_trainset = BufferDataset(aug_data, pred_next_softmax, target_type='soft')
-                    data_loader = Data.DataLoader(aug_trainset, batch_size=batch_size, 
+                    tset, vset = split_train_valid(aug_trainset, train_ratio=train_ratio)
+                    t_data_loader = Data.DataLoader(tset, batch_size=batch_size, 
                                                   shuffle=True, num_workers=num_workers)
+                    v_data_loader = Data.DataLoader(vset, batch_size=batch_size, 
+                                                  shuffle=False, num_workers=num_workers)
+                    best_acc = 0
+                    best_F = None
+                    best_opt_state_dict = None 
+                    p = patience
                     for i in range(epochs):
                         print('Epoch:', i+1)
-                        train_cost_sensitive(data_loader, F, optimizer, device)
-                        loss, acc = test_cost_sensitive(data_loader, F, device)
-                        print(f'loss:{loss}, acc:{acc}')               
+                        train_cost_sensitive(t_data_loader, F, optimizer, device)
+                        loss, acc = test_cost_sensitive(t_data_loader, F, device)
+                        print(f'Train loss:{loss}, acc:{acc}')
+                        loss, acc = test_cost_sensitive(v_data_loader, F, device)
+                        print(f'Valid loss:{loss}, acc:{acc}')               
+                        if acc > best_acc:
+                            best_acc = acc
+                            best_F = copy.deepcopy(F)
+                            best_opt_state_dict = copy.deepcopy(optimizer.state_dict())
+                            p = patience
+                        else:
+                            p -= 1
+                            if p < 0:
+                                print('Early stopping!')
+                                break
+                    F = best_F
+                    optimizer = optim.Adam(F.parameters(), lr=lr, weight_decay=decay)
+                    optimizer.load_state_dict(best_opt_state_dict)
                 
         if draw_boundary:  
             data_loader = Data.DataLoader(trainset, batch_size=batch_size, 
