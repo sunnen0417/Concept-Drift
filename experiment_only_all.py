@@ -161,7 +161,7 @@ if __name__ == '__main__':
             
         print(f'Get data softmax {t}')
         if t > 0:
-            data, target = torch.tensor(trainset.data), torch.tensor(trainset.target)
+            data, target = torch.FloatTensor(trainset.data), torch.LongTensor(trainset.target)
             historyset = Data.TensorDataset(data, target)
             data_loader = Data.DataLoader(historyset)
             for i in range(len(data_softmax_history)):
