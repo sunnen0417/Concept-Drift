@@ -108,11 +108,11 @@ if __name__ == '__main__':
 
         # store batch t dataset
         storeset.append(trainset.data, trainset.target)
-
+        
+        data_loader = Data.DataLoader(trainset, batch_size=batch_size, 
+                                shuffle=False, num_workers=num_workers)
         if t > 0:
             print(f'Test {t}')
-            data_loader = Data.DataLoader(trainset, batch_size=batch_size, 
-                                    shuffle=False, num_workers=num_workers)
             loss, acc = test(data_loader, F, device)
             print(f'loss:{loss}, acc:{acc}')
             test_acc.append(acc)

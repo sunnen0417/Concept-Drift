@@ -99,10 +99,10 @@ if __name__ == '__main__':
     test_acc = []
     for t in range(num_batch):
         trainset.set_t(t)
+        data_loader = Data.DataLoader(trainset, batch_size=batch_size, 
+                                shuffle=False, num_workers=num_workers)
         if t > 0:
             print(f'Test {t}')
-            data_loader = Data.DataLoader(trainset, batch_size=batch_size, 
-                                    shuffle=False, num_workers=num_workers)
             loss, acc = test(data_loader, F, device)
             print(f'loss:{loss}, acc:{acc}')
             test_acc.append(acc)
