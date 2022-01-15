@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as Data
 import matplotlib.pyplot as plt
+from sklearn.datasets import fetch_california_housing
         
 class SoftmaxDataset(Data.Dataset):
     def __init__(self, softmax_data, mode='train'):
@@ -650,10 +651,86 @@ class ONPDataset(Data.Dataset):
             
         if self.normalize:
             self.data[:, self.normalize_indices] = (self.data[:, self.normalize_indices] - self.mu) / self.std
-            
+
+# California housing dataset
+def get_threshold(target_range, variance_coeff, slices):
+    thresholds = []
+    u = (target_range[1] - target_range[0]) / slices
+    variant_step = np.random.normal(u, u * variance_coeff, slices + 1)
+    variant_step[0] = 0 # no need to move at starting threshold
+    t = target_range[0]
+    for i in range(slices + 1):
+        t += variant_step[i]
+        thresholds.append(t)
+    return thresholds
+
+class california_housing_dataset(Data.Dataset):
+    def __init__(self, num_batch=21, percentile=[10, 90], variance_coeff=0.5, normalize=True):
+        super(california_housing_dataset, self).__init__()
+        self.num_batch = num_batch
+        self.real_data = fetch_california_housing().data
+        self.all_data = []   #[data0, data1, ...]
+        self.data = []
+        self.real_target = fetch_california_housing().target
+        self.all_target = []
+        self.target = []
+        self.dim = self.real_data.shape[1]
+
+        self.target_range = [
+            np.percentile(np.sort(self.real_target), percentile[0]),
+            np.percentile(np.sort(self.real_target), percentile[1])
+        ]
+        self.thresholds = get_threshold(self.target_range, variance_coeff, self.num_batch)
+        
+        self.n_sample = self.real_target.shape[0]
+        
+        self.num_class = 2
+        self.normalize = normalize
+        self.num_batch = num_batch
+        self.base_dir = None
+        self.dataset_dir = None
+
+        self.preprocessing()
+
+        self.t = 0
+        self.set_t(self.t)
+        
+        
+
+    def __getitem__(self, index):
+        return torch.FloatTensor(self.data[index]), self.target[index]
+
+    def __len__(self):
+        return int(self.n_sample * 0.7)
+
+    # sklearn.datasets.fetch_california_housing dataset, all features is real number 
+    def preprocessing(self):
+        for t in range(self.num_batch):
+            indices = np.random.choice(range(self.n_sample), int(self.n_sample * 0.7), replace=False)
+
+            data = np.array(self.real_data[indices])
+            target = np.array([self.real_target[i] >= self.thresholds[t] for i in list(indices)], dtype="int64") 
+        
+            if t == 0:
+                self.mu = np.mean(data, axis=0)
+                self.std = np.maximum(np.std(data), 1e-5)
+            elif self.normalize == True:
+                data = (data - self.mu) / self.std 
+
+            self.all_data.append(data)
+            self.all_target.append(target)
+    
+    def set_t(self, t):
+        self.t = t
+        self.data = self.all_data[t]
+        self.target = self.all_target[t]
+        
+
+
 dataset_dict = {'translate':TranslateDataset(),
                 'rotate':RotateDataset(),
                 'ball':HyperballDataset(),
+                'house':california_housing_dataset(num_batch=11, normalize=True),
                 'gas':GasSensorDataset(normalize=True),
                 'covertype':CovertypeDataset(normalize=True),
                 'kdd':KDD99Dataset(normalize=True),
