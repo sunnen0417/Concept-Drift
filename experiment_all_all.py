@@ -81,7 +81,7 @@ if __name__ == '__main__':
     # Visualize the decision boundary if the dataset is suitable 
     if dim == 2 and classes == 2:
         draw_boundary = True
-        img_dir = f'{args.dataset}_cls_all_dp_all_{last_step_method}'
+        img_dir = f'{args.dataset}_num_batch_{trainset.num_batch}_cls_all_dp_all_{last_step_method}_seed_{seed}'
         os.makedirs(img_dir, exist_ok=True)
     
     # Classifier
