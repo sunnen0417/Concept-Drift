@@ -478,7 +478,7 @@ class KDD99Dataset(Data.Dataset):
 
         self.normalize_indices = [0,1,2,4,5,6,7,9,12,13,14,15,16,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37]
         self.mu = np.mean(self.alldata[:self.batch_data_num, self.normalize_indices], axis = 0)
-        self.std = np.maximum(np.std(self.alldata[:self.batch_data_num, self.normalize_indices]), 1e-5)
+        self.std = np.maximum(np.std(self.alldata[:self.batch_data_num, self.normalize_indices], axis = 0), 1e-5)
         self.cate_feat = [[3], [8], [10], [11], [17], [18], list(range(38,41)), list(range(41,107)), list(range(107,118))]
 
     def set_t(self, t):
@@ -570,7 +570,7 @@ class ElectricityDataset(Data.Dataset):
         # numeric features: [0, 1, 2, 3, 4, 5]
         self.normalize_indices = [0, 1, 2, 3, 4, 5]
         self.mu = np.mean(self.all_data[0][:, self.normalize_indices], axis = 0)
-        self.std = np.maximum(np.std(self.all_data[0][:, self.normalize_indices]), 1e-5)
+        self.std = np.maximum(np.std(self.all_data[0][:, self.normalize_indices], axis = 0), 1e-5)
 
         return
 
@@ -712,8 +712,8 @@ class california_housing_dataset(Data.Dataset):
         
             if t == 0:
                 self.mu = np.mean(data, axis=0)
-                self.std = np.maximum(np.std(data), 1e-5)
-            elif self.normalize == True:
+                self.std = np.maximum(np.std(data, axis=0), 1e-5)
+            if self.normalize == True:
                 data = (data - self.mu) / self.std 
 
             self.all_data.append(data)
@@ -911,7 +911,7 @@ class ford_price_dataset(Data.Dataset):
         # numeric: [0, 1, 2, 3]
         if t == 0:
             self.mu = np.mean(self.data[:, self.normalize_indices], axis = 0)
-            self.std = np.maximum(np.std(self.data[:, self.normalize_indices]), 1e-5)
+            self.std = np.maximum(np.std(self.data[:, self.normalize_indices], axis = 0), 1e-5)
 
         if self.normalize:
             self.data[:, self.normalize_indices] = (self.data[:, self.normalize_indices] - self.mu) / self.std
