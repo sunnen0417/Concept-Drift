@@ -680,7 +680,7 @@ class california_housing_dataset(Data.Dataset):
             np.percentile(np.sort(self.real_target), percentile[0]),
             np.percentile(np.sort(self.real_target), percentile[1])
         ]
-        self.thresholds = get_threshold(self.target_range, variance_coeff, self.num_batch)
+        self.thresholds = get_threshold(self.target_range, variance_coeff, self.num_batch-1)
         
         self.n_sample = self.real_target.shape[0]
         
@@ -694,7 +694,7 @@ class california_housing_dataset(Data.Dataset):
 
         self.t = 0
         self.set_t(self.t)
-        
+        self.cate_feat = []
         
 
     def __getitem__(self, index):
@@ -724,13 +724,208 @@ class california_housing_dataset(Data.Dataset):
         self.t = t
         self.data = self.all_data[t]
         self.target = self.all_target[t]
-        
 
+# Wine dataset (white/red)     
+class wine_quality_dataset(Data.Dataset):
+    def __init__(self, dataset='white', normalize=True):
+        super(wine_quality_dataset, self).__init__()
+        assert dataset in ['white', 'red']
+        
+        self.base_dir = 'datasets'
+        self.dataset_dir = 'wine_quality'
+        if os.path.exists(os.path.join(self.base_dir, self.dataset_dir)):
+            print(f'{os.path.join(self.base_dir, self.dataset_dir)} exists!')
+        else:
+            # download the dataset
+            os.makedirs(os.path.join(self.base_dir, self.dataset_dir), exist_ok=True)
+            os.chdir(os.path.join(self.base_dir, self.dataset_dir))
+            os.system(f'wget http://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-red.csv')
+            os.system(f'wget http://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-white.csv')
+            os.chdir('../..')  
+            
+        self.df = pd.read_csv(os.path.join(self.base_dir, self.dataset_dir, f'winequality-{dataset}.csv'), sep=';', dtype=float) 
+        self.X = self.df.iloc[:, :-1].to_numpy()
+        self.y = self.df.iloc[:, -1].to_numpy()    
+        self.n_sample = self.X.shape[0]
+        self.normalize_indices = list(range(self.X.shape[1]))
+            
+        self.thresholds = [4,5,6,7,8] 
+        self.sample_rate = 0.7
+        self.num_batch = len(self.thresholds)
+        self.data = []
+        self.target = []
+        self.normalize= normalize
+        self.mu = None
+        self.std = None
+        self.t = 0
+        self.set_t(self.t)
+        self.num_class = 2
+        self.cate_feat = []
+        
+    def __getitem__(self, index):
+        return torch.FloatTensor(self.data[index]), self.target[index]
+
+    def __len__(self):
+        return int(self.n_sample*self.sample_rate) 
+    
+    def set_t(self, t):
+        self.t = t
+        sample_indexes = random.sample(range(self.n_sample), int(self.n_sample*self.sample_rate)) 
+        self.data = self.X[sample_indexes,:]
+        self.target = self.y[sample_indexes]
+        self.target = [1 if val >= self.thresholds[self.t] else 0 for val in self.target]
+        
+        if t == 0:
+            self.mu = np.mean(self.data[:, self.normalize_indices], axis=0)
+            self.std = np.maximum(np.std(self.data[:, self.normalize_indices], axis=0), 1e-5)
+            
+        if self.normalize:
+            self.data[:, self.normalize_indices] = (self.data[:, self.normalize_indices] - self.mu) / self.std
+
+# Power plant
+class CCPP_dataset(Data.Dataset):  
+    def __init__(self, k, normalize=True):
+        super(CCPP_dataset, self).__init__()
+        
+        self.base_dir = 'datasets'
+        self.dataset_dir = 'CCPP'
+        if os.path.exists(os.path.join(self.base_dir, self.dataset_dir)):
+            print(f'{os.path.join(self.base_dir, self.dataset_dir)} exists!')
+        else:
+            # download the dataset
+            os.makedirs(self.base_dir, exist_ok=True)
+            os.chdir(self.base_dir)
+            os.system('wget https://archive.ics.uci.edu/ml/machine-learning-databases/00294/CCPP.zip')
+            os.system('unzip CCPP.zip')
+            os.system('rm -f CCPP.zip')
+            os.chdir('..')
+
+        self.df = pd.read_excel(os.path.join(self.base_dir, self.dataset_dir, 'Folds5x2_pp.xlsx'), engine='openpyxl', sheet_name='Sheet1')
+        self.X = self.df.iloc[:, :-1].to_numpy()
+        self.y = self.df.iloc[:, -1].to_numpy()    
+        self.n_sample = self.X.shape[0]
+        self.normalize_indices = list(range(self.X.shape[1]))
+        
+        THs = np.percentile(self.y, 10)
+        THe = np.percentile(self.y, 90)
+        k = k         
+        self.thresholds = []
+        u = (THe - THs) / k
+        variant_step = np.random.normal(u, u*0.5, k+1)
+        variant_step[0] = 0 # no need to move at starting threshold
+        t = THs
+        for i in range(k+1):
+            t += variant_step[i]
+            self.thresholds.append(t)
+            
+        self.num_batch = len(self.thresholds)
+        self.sample_rate = 0.7
+        self.data = []
+        self.target = []
+        self.normalize= normalize
+        self.mu = None
+        self.std = None
+        self.t = 0
+        self.set_t(self.t)
+        self.num_class = 2
+        self.cate_feat = []
+        
+    def __getitem__(self, index):
+        return torch.FloatTensor(self.data[index]), self.target[index]
+
+    def __len__(self):
+        return int(self.n_sample*self.sample_rate) 
+    
+    def set_t(self, t):
+        self.t = t
+        sample_indexes = random.sample(range(self.n_sample), int(self.n_sample*self.sample_rate))
+        self.data = self.X[sample_indexes,:]
+        self.target = self.y[sample_indexes]
+        self.target = [1 if val >= self.thresholds[self.t] else 0 for val in self.target]
+        
+        if t == 0:
+            self.mu = np.mean(self.data[:, self.normalize_indices], axis=0)
+            self.std = np.maximum(np.std(self.data[:, self.normalize_indices], axis=0), 1e-5)
+            
+        if self.normalize:
+            self.data[:, self.normalize_indices] = (self.data[:, self.normalize_indices] - self.mu) / self.std
+
+# Ford price
+def get_ford_price(csv_file):
+    data_tar = np.genfromtxt(csv_file, delimiter=',')
+    return data_tar[:, :-1], data_tar[:, -1]
+
+class ford_price_dataset(Data.Dataset):
+    def __init__(self, time_slice = 20,
+                percentile = [10, 90],
+                variance_coeff = 0.5,
+                normalize = True):
+        super(ford_price_dataset, self).__init__()
+        self.time_slice = time_slice
+        self.num_batch = time_slice + 1
+        self.num_class = 2
+        self.base_dir = 'datasets'
+        self.dataset_dir = 'ford_price'
+        self.normalize = normalize
+        self.normalize_indices = [0, 1, 2, 3]
+        self.cate_feat = [list(range(4, 41))]
+
+        dataset_path = os.path.join(self.base_dir, self.dataset_dir)
+        if os.path.exists(os.path.join(self.base_dir, self.dataset_dir)):
+            print(f'{os.path.join(self.base_dir, self.dataset_dir)} exists!')
+        else:
+            os.system(f'mkdir -p {dataset_path}')
+            os.system(f'wget -O {dataset_path}/ford_preprocessed.csv https://www.csie.ntu.edu.tw/\~b08201047/ford_preprocessed.csv')
+
+        self.real_data, self.real_target = get_ford_price(f'{dataset_path}/ford_preprocessed.csv')
+        self.data, self.target = [], []
+        self.dim = self.real_data.shape[1]
+        self.target_range = [
+            np.percentile(np.sort(self.real_target), percentile[0]),
+            np.percentile(np.sort(self.real_target), percentile[1])
+        ]
+
+        self.thresholds = get_threshold(self.target_range, variance_coeff, self.time_slice)
+        self.n_sample = self.real_target.shape[0]
+        self.t = 0
+        self.set_t(self.t)
+
+    def __getitem__(self, index):
+        return torch.FloatTensor(self.data[index]), self.target[index]
+
+    def __len__(self):
+        return int(self.n_sample * 0.7)
+
+    def set_t(self, t):
+        indices = np.random.choice(range(self.n_sample), int(self.n_sample * 0.7), replace=False)
+
+        self.t = t
+        data = self.real_data[indices]
+        target = []
+
+        for i in list(indices):
+            target.append(self.real_target[i] >= self.thresholds[t])
+
+        self.data = np.array(data)
+        self.target = np.array(target, dtype = "int64")
+
+        # numeric: [0, 1, 2, 3]
+        if t == 0:
+            self.mu = np.mean(self.data[:, self.normalize_indices], axis = 0)
+            self.std = np.maximum(np.std(self.data[:, self.normalize_indices]), 1e-5)
+
+        if self.normalize:
+            self.data[:, self.normalize_indices] = (self.data[:, self.normalize_indices] - self.mu) / self.std
+            
 
 dataset_dict = {'translate':TranslateDataset(),
                 'rotate':RotateDataset(),
                 'ball':HyperballDataset(),
                 'house':california_housing_dataset(num_batch=11, normalize=True),
+                'wine_white':wine_quality_dataset(dataset='white', normalize=True),
+                'wine_red':wine_quality_dataset(dataset='red', normalize=True),
+                'power':CCPP_dataset(k=10, normalize=True),
+                'price':ford_price_dataset(time_slice=10, normalize=True),
                 'gas':GasSensorDataset(normalize=True),
                 'covertype':CovertypeDataset(normalize=True),
                 'kdd':KDD99Dataset(normalize=True),
