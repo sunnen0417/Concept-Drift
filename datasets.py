@@ -179,7 +179,6 @@ class RotateDataset(Data.Dataset):
         for i in range(self.num_batch):
             angles.append(i*rpc)
         concept = get_rotate_concept(angles)
-        self.num_batch = 41
         self.n_per_batch = 4000
         self.concept = np.array(concept)
         self.t = 0
