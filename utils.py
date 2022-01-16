@@ -557,10 +557,10 @@ def split_train_valid(dataset, train_ratio=0.8):
         tset = SoftmaxDataset(np.array(dataset.softmax_data)[:,mask], mode=dataset.mode)
         vset = SoftmaxDataset(np.array(dataset.softmax_data)[:,~mask], mode=dataset.mode)
     elif dataset.__class__.__name__ == 'BufferDataset':
-        tset = BufferDataset(dataset.data[mask], dataset.target[mask], target_type=dataset.target_type)
-        vset = BufferDataset(dataset.data[~mask], dataset.target[~mask], target_type=dataset.target_type)
+        tset = BufferDataset(np.array(dataset.data)[mask], np.array(dataset.target)[mask], target_type=dataset.target_type)
+        vset = BufferDataset(np.array(dataset.data)[~mask], np.array(dataset.target)[~mask], target_type=dataset.target_type)
     else:
-        tset = BufferDataset(dataset.data[mask], dataset.target[mask], target_type='hard')
-        vset = BufferDataset(dataset.data[~mask], dataset.target[~mask], target_type='hard')
+        tset = BufferDataset(np.array(dataset.data)[mask], np.array(dataset.target)[mask], target_type='hard')
+        vset = BufferDataset(np.array(dataset.data)[~mask], np.array(dataset.target)[~mask], target_type='hard')
 
     return tset, vset
