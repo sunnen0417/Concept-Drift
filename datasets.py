@@ -10,7 +10,7 @@ import torch.optim as optim
 import torch.utils.data as Data
 import matplotlib.pyplot as plt
 from sklearn.datasets import fetch_california_housing
-        
+
 class SoftmaxDataset(Data.Dataset):
     def __init__(self, softmax_data, mode='train'):
         super(SoftmaxDataset, self).__init__()
@@ -917,7 +917,17 @@ class ford_price_dataset(Data.Dataset):
         if self.normalize:
             self.data[:, self.normalize_indices] = (self.data[:, self.normalize_indices] - self.mu) / self.std
             
-
+def set_seed(seed):
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    
+set_seed(0)
 dataset_dict = {'translate':TranslateDataset(),
                 'rotate':RotateDataset(),
                 'ball':HyperballDataset(),
