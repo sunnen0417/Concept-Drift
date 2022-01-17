@@ -915,6 +915,140 @@ class ford_price_dataset(Data.Dataset):
 
         if self.normalize:
             self.data[:, self.normalize_indices] = (self.data[:, self.normalize_indices] - self.mu) / self.std
+
+class admission_dataset(Data.Dataset):  
+    def __init__(self, k, normalize=True):
+        super(admission_dataset, self).__init__()
+
+        self.base_dir = 'datasets'
+        self.dataset_dir = 'admission'
+        if os.path.exists(os.path.join(self.base_dir, self.dataset_dir)):
+            print(f'{os.path.join(self.base_dir, self.dataset_dir)} exists!')
+        else:
+            # download the dataset
+            os.makedirs(os.path.join(self.base_dir, self.dataset_dir), exist_ok=True)
+            os.chdir(os.path.join(self.base_dir, self.dataset_dir))
+            os.system(f'wget -O Admission_Predict_Ver1.1.csv https://www.csie.ntu.edu.tw/\~b06504025/Admission_Predict_Ver1.1.csv')
+            os.chdir('../..')
+
+        feats_ids = [0, 1, 2, 3, 4, 5, 6, 7]
+        label_ids = [8]
+        self.data = np.genfromtxt(os.path.join(self.base_dir, self.dataset_dir, 'Admission_Predict_Ver1.1.csv'), delimiter=',', skip_header=1)
+        self.X = self.data[:, feats_ids]
+        self.y = self.data[:, label_ids]
+        self.n_sample = self.X.shape[0]
+        self.normalize_indices = list(range(self.X.shape[1]))
+
+        THs = np.percentile(self.y, 10)
+        THe = np.percentile(self.y, 90)
+        k = k         
+        self.thresholds = []
+        u = (THe - THs) / k
+        variant_step = np.random.normal(u, u*0.5, k+1)
+        variant_step[0] = 0 # no need to move at starting threshold
+        t = THs
+        for i in range(k+1):
+            t += variant_step[i]
+            self.thresholds.append(t)
+
+        self.num_batch = len(self.thresholds)
+        self.sample_rate = 0.7
+        self.data = []
+        self.target = []
+        self.normalize = normalize
+        self.mu = None
+        self.std = None
+        self.t = 0
+        self.set_t(self.t)
+        self.num_class = 2
+        self.cate_feat = []
+
+    def __getitem__(self, index):
+        return torch.FloatTensor(self.data[index]), self.target[index]
+
+    def __len__(self):
+        return int(self.n_sample*self.sample_rate) 
+
+    def set_t(self, t):
+        self.t = t
+        sample_indexes = random.sample(range(self.n_sample), int(self.n_sample*self.sample_rate))
+        self.data = self.X[sample_indexes,:]
+        self.target = self.y[sample_indexes]
+        self.target = [1 if val >= self.thresholds[self.t] else 0 for val in self.target]
+
+        if t == 0:
+            self.mu = np.mean(self.data[:, self.normalize_indices], axis=0)
+            self.std = np.maximum(np.std(self.data[:, self.normalize_indices], axis=0), 1e-5)
+
+        if self.normalize:
+            self.data[:, self.normalize_indices] = (self.data[:, self.normalize_indices] - self.mu) / self.std
+
+class house_sale_dataset(Data.Dataset):  
+    def __init__(self, k, normalize=True):
+        super(house_sale_dataset, self).__init__()
+
+        self.base_dir = 'datasets'
+        self.dataset_dir = 'sale'
+        if os.path.exists(os.path.join(self.base_dir, self.dataset_dir)):
+            print(f'{os.path.join(self.base_dir, self.dataset_dir)} exists!')
+        else:
+            # download the dataset
+            os.makedirs(os.path.join(self.base_dir, self.dataset_dir), exist_ok=True)
+            os.chdir(os.path.join(self.base_dir, self.dataset_dir))
+            os.system(f'wget -O kc_house_data.csv https://www.csie.ntu.edu.tw/\~b06504025/kc_house_data.csv')
+            os.chdir('../..')
+
+        feats_ids = [3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 20]
+        label_ids = [2]
+        self.data = np.genfromtxt(os.path.join(self.base_dir, self.dataset_dir, 'kc_house_data.csv'), delimiter=',', skip_header=1)
+        self.X = self.data[:, feats_ids]
+        self.y = self.data[:, label_ids]
+        self.n_sample = self.X.shape[0]
+        self.normalize_indices = list(range(self.X.shape[1]))
+
+        THs = np.percentile(self.y, 10)
+        THe = np.percentile(self.y, 90)
+        k = k         
+        self.thresholds = []
+        u = (THe - THs) / k
+        variant_step = np.random.normal(u, u*0.5, k+1)
+        variant_step[0] = 0 # no need to move at starting threshold
+        t = THs
+        for i in range(k+1):
+            t += variant_step[i]
+            self.thresholds.append(t)
+
+        self.num_batch = len(self.thresholds)
+        self.sample_rate = 0.7
+        self.data = []
+        self.target = []
+        self.normalize = normalize
+        self.mu = None
+        self.std = None
+        self.t = 0
+        self.set_t(self.t)
+        self.num_class = 2
+        self.cate_feat = []
+
+    def __getitem__(self, index):
+        return torch.FloatTensor(self.data[index]), self.target[index]
+
+    def __len__(self):
+        return int(self.n_sample*self.sample_rate) 
+
+    def set_t(self, t):
+        self.t = t
+        sample_indexes = random.sample(range(self.n_sample), int(self.n_sample*self.sample_rate))
+        self.data = self.X[sample_indexes,:]
+        self.target = self.y[sample_indexes]
+        self.target = [1 if val >= self.thresholds[self.t] else 0 for val in self.target]
+
+        if t == 0:
+            self.mu = np.mean(self.data[:, self.normalize_indices], axis=0)
+            self.std = np.maximum(np.std(self.data[:, self.normalize_indices], axis=0), 1e-5)
+
+        if self.normalize:
+            self.data[:, self.normalize_indices] = (self.data[:, self.normalize_indices] - self.mu) / self.std
             
 def set_seed(seed):
     np.random.seed(seed)
@@ -930,6 +1064,8 @@ set_seed(0)
 dataset_dict = {'translate':TranslateDataset(),
                 'rotate':RotateDataset(),
                 'ball':HyperballDataset(),
+                'admission':admission_dataset(k=10, normalize=True),
+                'sale':house_sale_dataset(k=10, normalize=True),
                 'house':california_housing_dataset(num_batch=11, normalize=True),
                 'wine_white':wine_quality_dataset(dataset='white', normalize=True),
                 'wine_red':wine_quality_dataset(dataset='red', normalize=True),
