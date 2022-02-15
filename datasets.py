@@ -12,6 +12,13 @@ import matplotlib.pyplot as plt
 from sklearn.datasets import fetch_california_housing
 
 class SoftmaxDataset(Data.Dataset):
+    """
+    row: same timestamp, column: same instance
+    [[s1_0, s2_0, ..., sn_0],
+     [s1_1, s2_1, ..., sn_1],
+     ...,
+     [s1_t, s2_t, ..., sn_t]]
+    """
     def __init__(self, softmax_data, mode='train'):
         super(SoftmaxDataset, self).__init__()
         self.softmax_data = softmax_data
@@ -30,7 +37,35 @@ class SoftmaxDataset(Data.Dataset):
             return data
         
     def __len__(self):
-        return len(self.softmax_data[0])    
+        return len(self.softmax_data[0])
+
+class SoftmaxOnlineDataset(Data.Dataset):
+    """
+    row: same instance
+    [[s1_0, s1_1, ..., s1_t1],
+     [s2_0, s2_1, ..., s2_t2],
+     ...,
+     [sn_0, sn_1, ..., sn_tn]]
+    """
+    def __init__(self, softmax_data, mode='train'):
+        super(SoftmaxOnlineDataset, self).__init__()
+        self.softmax_data = softmax_data
+        self.mode = mode
+        
+    def __getitem__(self, index):
+        if self.mode == 'train':
+            data = self.softmax_data[index][:-1]
+            data = torch.FloatTensor(data)
+            target = self.softmax_data[index][-1]
+            target = torch.FloatTensor(target)
+            return data, target
+        else:
+            data = self.softmax_data[index]
+            data = torch.FloatTensor(data)
+            return data
+        
+    def __len__(self):
+        return len(self.softmax_data)   
 
 class BufferDataset(Data.Dataset):
     def __init__(self, X, y, target_type='hard'):
@@ -362,7 +397,6 @@ class CovertypeDataset(Data.Dataset):
             os.system('rm -f covtype.data.gz')
             os.chdir('../..')
             
-        self.num_batch = 10
         self.n_total = 0
         with open(os.path.join(self.base_dir, self.dataset_dir, 'covtype.data'), 'r') as f:
             while 1:
@@ -372,7 +406,8 @@ class CovertypeDataset(Data.Dataset):
                     break
                 self.n_total += 1
 
-        self.n_per_batch = int(self.n_total/self.num_batch)
+        self.n_per_batch = 1000
+        self.num_batch = int(self.n_total/self.n_per_batch)
         self.data = []
         self.target = []
         self.normalize= normalize

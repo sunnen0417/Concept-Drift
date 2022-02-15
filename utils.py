@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.utils.data as Data
 import matplotlib.pyplot as plt
-from datasets import BufferDataset, SoftmaxDataset
+from datasets import BufferDataset, SoftmaxDataset, SoftmaxOnlineDataset
 
 # Training
 def train(train_loader, F, optimizer, device):
@@ -556,6 +556,9 @@ def split_train_valid(dataset, train_ratio=0.8):
     if dataset.__class__.__name__ == 'SoftmaxDataset':
         tset = SoftmaxDataset(np.array(dataset.softmax_data)[:,mask], mode=dataset.mode)
         vset = SoftmaxDataset(np.array(dataset.softmax_data)[:,~mask], mode=dataset.mode)
+    elif dataset.__class__.__name__ == 'SoftmaxOnlineDataset':
+        tset = SoftmaxOnlineDataset([dataset.softmax_data[i] for i, flag in enumerate(mask) if flag], mode=dataset.mode)
+        vset = SoftmaxOnlineDataset([dataset.softmax_data[i] for i, flag in enumerate(mask) if not flag], mode=dataset.mode)
     elif dataset.__class__.__name__ == 'BufferDataset':
         tset = BufferDataset(np.array(dataset.data)[mask], np.array(dataset.target)[mask], target_type=dataset.target_type)
         vset = BufferDataset(np.array(dataset.data)[~mask], np.array(dataset.target)[~mask], target_type=dataset.target_type)
