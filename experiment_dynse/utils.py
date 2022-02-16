@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.utils.data as Data
 import matplotlib.pyplot as plt
 from datasets import BufferDataset, SoftmaxDataset
+from sklearn.neighbors import KNeighborsClassifier
 
 # Training
 def train(train_loader, F, optimizer, device):
@@ -18,12 +19,6 @@ def train(train_loader, F, optimizer, device):
         loss.backward()
         optimizer.step()
 
-def knn(ref, query, k):   # knn(x, validation_set, k)
-    delta = query - ref
-    distances = torch.sqrt(torch.pow(delta, 2).sum(dim=1))
-    sorted_dist, indices = torch.sort(distances, dim=-1)
-    return indices[:k].reshape(-1)
-
 def test_dynse(test_loader, init_num_neighbors, validation_set, classifier_pool, device):
     criterion = nn.CrossEntropyLoss()
     with torch.no_grad():
@@ -37,13 +32,16 @@ def test_dynse(test_loader, init_num_neighbors, validation_set, classifier_pool,
             sub_matrix = cls(torch.FloatTensor(validation_set.data).to(device)).max(1)[1] == torch.LongTensor(validation_set.target).to(device)
             cls_valid_matrix = torch.cat((cls_valid_matrix, sub_matrix.reshape(1,-1))) if i else sub_matrix.reshape(1,-1)  
             
+        knn_model = KNeighborsClassifier(n_neighbors=init_num_neighbors) 
+        knn_model.fit(validation_set.data, validation_set.target)
+        
         for data, target in test_loader:  # batch_size is 1
             # find neighbors and find classifiers
             num_neighbors = init_num_neighbors
             keep_classifiers = []
             while not keep_classifiers and num_neighbors:
-              neighbor_indexes = knn(data, torch.FloatTensor(validation_set.data), num_neighbors)  
-              cls_neighbor_matrix = cls_valid_matrix[:, neighbor_indexes]
+              _, neighbor_indexes = knn_model.kneighbors(data, n_neighbors=num_neighbors)
+              cls_neighbor_matrix = cls_valid_matrix[:, neighbor_indexes.reshape(-1)]  
               keep = list(cls_neighbor_matrix.sum(dim=1) == num_neighbors)  # classify all neighbors correctly
               keep_classifiers = [i for i, kp in enumerate(keep) if kp]              
               num_neighbors -= 1
