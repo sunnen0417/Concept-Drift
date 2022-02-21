@@ -66,11 +66,7 @@ class DynamicPredictor(nn.Module):
 
     if location:
         assert(location_dim != None)
-        self.location_layer = nn.Sequential(
-            nn.Linear(location_dim, 2 * location_dim),
-            nn.ReLU(),
-            nn.Linear(2 * location_dim, in_size)
-        )
+        self.location_layer = MLP(location_dim, in_size)
 
   def forward(self, x, location_info=None):
     """
