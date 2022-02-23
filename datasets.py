@@ -19,9 +19,10 @@ class SoftmaxDataset(Data.Dataset):
      ...,
      [s1_t, s2_t, ..., sn_t]]
     """
-    def __init__(self, softmax_data, mode='train'):
+    def __init__(self, softmax_data, loc=None, mode='train'):
         super(SoftmaxDataset, self).__init__()
         self.softmax_data = softmax_data
+        self.loc = loc
         self.mode = mode
         
     def __getitem__(self, index):
@@ -30,10 +31,16 @@ class SoftmaxDataset(Data.Dataset):
             data = torch.FloatTensor(data)
             target = self.softmax_data[-1][index]
             target = torch.FloatTensor(target)
+            if self.loc is not None:
+                loc = torch.FloatTensor(self.loc[index])
+                return data, loc, target
             return data, target
         else:
             data = [self.softmax_data[i][index] for i in range(len(self.softmax_data))]
             data = torch.FloatTensor(data)
+            if self.loc is not None:
+                loc = torch.FloatTensor(self.loc[index])
+                return data, loc
             return data
         
     def __len__(self):
@@ -47,9 +54,10 @@ class SoftmaxOnlineDataset(Data.Dataset):
      ...,
      [sn_0, sn_1, ..., sn_tn]]
     """
-    def __init__(self, softmax_data, mode='train'):
+    def __init__(self, softmax_data, loc=None, mode='train'):
         super(SoftmaxOnlineDataset, self).__init__()
         self.softmax_data = softmax_data
+        self.loc = loc
         self.mode = mode
         
     def __getitem__(self, index):
@@ -58,15 +66,21 @@ class SoftmaxOnlineDataset(Data.Dataset):
             data = torch.FloatTensor(data)
             target = self.softmax_data[index][-1]
             target = torch.FloatTensor(target)
+            if self.loc is not None:
+                loc = torch.FloatTensor(self.loc[index])
+                return data, loc, target
             return data, target
         else:
             data = self.softmax_data[index]
             data = torch.FloatTensor(data)
+            if self.loc is not None:
+                loc = torch.FloatTensor(self.loc[index])
+                return data, loc
             return data
         
     def __len__(self):
-        return len(self.softmax_data)   
-
+        return len(self.softmax_data)
+    
 class BufferDataset(Data.Dataset):
     def __init__(self, X, y, target_type='hard'):
         super(BufferDataset, self).__init__()
@@ -1094,7 +1108,7 @@ def set_seed(seed):
         torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
-    
+
 set_seed(0)
 dataset_dict = {'translate':TranslateDataset(),
                 'rotate':RotateDataset(),

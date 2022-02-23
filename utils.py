@@ -141,13 +141,22 @@ def train_dynamic(train_loader, DP, optimizer, device):
     DP.to(device)
     DP.train()
     criterion = nn.KLDivLoss(reduction='batchmean')
-    for data, target in train_loader:
-        data, target = data.to(device), target.to(device)
-        optimizer.zero_grad()
-        output = nn.functional.log_softmax(DP(data), dim=1)
-        loss = criterion(output, target)
-        loss.backward()
-        optimizer.step()
+    if len(train_loader.dataset[0]) == 2:
+        for data, target in train_loader:
+            data, target = data.to(device), target.to(device)
+            optimizer.zero_grad()
+            output = nn.functional.log_softmax(DP(data), dim=1)
+            loss = criterion(output, target)
+            loss.backward()
+            optimizer.step()
+    elif len(train_loader.dataset[0]) == 3:
+        for data, loc, target in train_loader:
+            data, loc, target = data.to(device), loc.to(device), target.to(device)
+            optimizer.zero_grad()
+            output = nn.functional.log_softmax(DP(data, loc), dim=1)
+            loss = criterion(output, target)
+            loss.backward()
+            optimizer.step()
 
 # Testing dynamic
 def test_dynamic(test_loader, DP, device, return_softmax=False):
@@ -158,15 +167,27 @@ def test_dynamic(test_loader, DP, device, return_softmax=False):
         softmax_log = []
     with torch.no_grad():
         total_loss = 0
-        for data, target in test_loader:
-            data, target = data.to(device), target.to(device)
-            logits = DP(data)
-            output = nn.functional.log_softmax(logits, dim=1)
-            loss = criterion(output, target)
-            total_loss += loss.item() * len(data)
-            if return_softmax:
-                prob = nn.functional.softmax(logits, dim=1).tolist()
-                softmax_log += prob
+        if len(test_loader.dataset[0]) == 2:
+            for data, target in test_loader:
+                data, target = data.to(device), target.to(device)
+                logits = DP(data)
+                output = nn.functional.log_softmax(logits, dim=1)
+                loss = criterion(output, target)
+                total_loss += loss.item() * len(data)
+                if return_softmax:
+                    prob = nn.functional.softmax(logits, dim=1).tolist()
+                    softmax_log += prob
+        elif len(test_loader.dataset[0]) == 3:
+            for data, loc, target in test_loader:
+                data, loc, target = data.to(device), loc.to(device), target.to(device)
+                logits = DP(data, loc)
+                output = nn.functional.log_softmax(logits, dim=1)
+                loss = criterion(output, target)
+                total_loss += loss.item() * len(data)
+                if return_softmax:
+                    prob = nn.functional.softmax(logits, dim=1).tolist()
+                    softmax_log += prob
+                    
     total_loss /= len(test_loader.dataset)
     if return_softmax:
         return total_loss, softmax_log
@@ -178,11 +199,16 @@ def predict_dynamic(test_loader, DP, device):
     DP.eval()
     softmax_log = []
     with torch.no_grad():
-        for data in test_loader:
-            data = data.to(device)
-            prob = nn.functional.softmax(DP(data), dim=1).tolist()
-            softmax_log += prob
-
+        if type(test_loader.dataset[0]) is not tuple:
+            for data in test_loader:
+                data = data.to(device)
+                prob = nn.functional.softmax(DP(data), dim=1).tolist()
+                softmax_log += prob
+        else:
+            for data, loc in test_loader:
+                data, loc = data.to(device), loc.to(device)
+                prob = nn.functional.softmax(DP(data, loc), dim=1).tolist()
+                softmax_log += prob            
     return softmax_log
 
 def draw_decision_boundary(data_loader, F, device, x_range=None, y_range=None, newfig=False, db_color='b'):
@@ -554,11 +580,19 @@ def split_train_valid(dataset, train_ratio=0.8):
     train_idx = np.random.choice(len(dataset), size=int(train_ratio*len(dataset)), replace=False)
     mask[train_idx] = True
     if dataset.__class__.__name__ == 'SoftmaxDataset':
-        tset = SoftmaxDataset(np.array(dataset.softmax_data)[:,mask], mode=dataset.mode)
-        vset = SoftmaxDataset(np.array(dataset.softmax_data)[:,~mask], mode=dataset.mode)
+        if dataset.loc is None:
+            tset = SoftmaxDataset(np.array(dataset.softmax_data)[:,mask], mode=dataset.mode)
+            vset = SoftmaxDataset(np.array(dataset.softmax_data)[:,~mask], mode=dataset.mode)
+        else:
+            tset = SoftmaxDataset(np.array(dataset.softmax_data)[:,mask], loc=np.array(dataset.loc)[mask], mode=dataset.mode)
+            vset = SoftmaxDataset(np.array(dataset.softmax_data)[:,~mask], loc=np.array(dataset.loc)[~mask], mode=dataset.mode)            
     elif dataset.__class__.__name__ == 'SoftmaxOnlineDataset':
-        tset = SoftmaxOnlineDataset([dataset.softmax_data[i] for i, flag in enumerate(mask) if flag], mode=dataset.mode)
-        vset = SoftmaxOnlineDataset([dataset.softmax_data[i] for i, flag in enumerate(mask) if not flag], mode=dataset.mode)
+        if dataset.loc is None:
+            tset = SoftmaxOnlineDataset([dataset.softmax_data[i] for i, flag in enumerate(mask) if flag], mode=dataset.mode)
+            vset = SoftmaxOnlineDataset([dataset.softmax_data[i] for i, flag in enumerate(mask) if not flag], mode=dataset.mode)
+        else:
+            tset = SoftmaxOnlineDataset([dataset.softmax_data[i] for i, flag in enumerate(mask) if flag], loc=np.array(dataset.loc)[mask], mode=dataset.mode)
+            vset = SoftmaxOnlineDataset([dataset.softmax_data[i] for i, flag in enumerate(mask) if not flag], loc=np.array(dataset.loc)[~mask], mode=dataset.mode)            
     elif dataset.__class__.__name__ == 'BufferDataset':
         tset = BufferDataset(np.array(dataset.data)[mask], np.array(dataset.target)[mask], target_type=dataset.target_type)
         vset = BufferDataset(np.array(dataset.data)[~mask], np.array(dataset.target)[~mask], target_type=dataset.target_type)

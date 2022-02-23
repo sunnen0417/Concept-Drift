@@ -53,7 +53,7 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 class DynamicPredictor(nn.Module):
-  def __init__(self, in_size=2, d_model=4, dropout=0.1):
+  def __init__(self, in_size=2, d_model=4, dropout=0.1, location=False, location_dim=None, location_weight=0.1):
     super(DynamicPredictor, self).__init__()
     # Project the dimension of features from that of input into d_model.
     self.prenet = nn.Linear(in_size, d_model)
@@ -63,17 +63,24 @@ class DynamicPredictor(nn.Module):
     )
     # self.encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=2)
 
-    # Project the the dimension of features from d_model into speaker nums.
+    # Project the the dimension of features from d_model into in_size.
     self.pred_layer = nn.Sequential(
       nn.Linear(d_model, in_size),
     )
 
-  def forward(self, x):
+    self.location = location
+    self.location_weight = location_weight
+
+    if location:
+        assert(location_dim != None)
+        self.location_layer = MLP(location_dim, in_size)
+
+  def forward(self, x, location_info=None):
     """
     args:
-      mels: (batch size, length, 40)
+      x: (batch size, length, in_size)
     return:
-      out: (batch size, n_spks)
+      out: (batch size, in_size)
     """
     # out: (batch size, length, d_model)
     out = self.prenet(x)
@@ -88,8 +95,15 @@ class DynamicPredictor(nn.Module):
     # mean pooling
     stats = out.mean(dim=1)
 
-    # out: (batch, n_spks)
+    # out: (batch, in_size)
     out = self.pred_layer(stats)
+
+    if self.location:
+        assert(location_info != None)
+        location_bias = self.location_layer(location_info)
+        
+        return (1 - self.location_weight) * out + self.location_weight * location_bias
+
     return out
 
 class VAE(nn.Module):
