@@ -306,7 +306,8 @@ if __name__ == '__main__':
             draw_decision_boundary(data_loader, F, device, x_range=trainset.x_range, y_range=trainset.y_range, newfig=False, db_color='r')
     
     print('Test acc log:', test_acc)
-    print('Mean acc:', sum(test_acc)/len(test_acc))
+    test_acc = np.array(test_acc)
+    print(f'Mean acc ± std: {np.mean(test_acc)} ± {np.std(test_acc)}')
 
         
         

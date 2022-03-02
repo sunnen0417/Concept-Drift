@@ -102,6 +102,7 @@ class StoreDataset(Data.Dataset):
         super(StoreDataset, self).__init__()
         self.data = None
         self.target = None
+        self.batch_data_count = [] 
 
     def __getitem__(self, index):
         return torch.FloatTensor(self.data[index]), self.target[index]
@@ -116,6 +117,12 @@ class StoreDataset(Data.Dataset):
         else:
             self.data = np.r_[self.data, new_data]
             self.target = np.r_[self.target, new_target]
+        self.batch_data_count.append(len(new_target))
+    
+    def remove_oldest_batch(self):
+        self.data = self.data[self.batch_data_count[0]:,:]
+        self.target = self.target[self.batch_data_count[0]:]
+        self.batch_data_count.pop(0)
 
 def get_translate_concept(s, e, slice):
     concept = []
@@ -169,6 +176,7 @@ def get_hyperball_concept(r_range=None, c_range=None, K_range=None, t=11):
     return [radius, center, K]
 
 # Translation dataset (Synthetic): -x+4y-20 -> -x+4y+20
+# P(y|X) changes
 class TranslateDataset(Data.Dataset):
     def __init__(self):
         super(TranslateDataset, self).__init__()
@@ -217,6 +225,7 @@ class TranslateDataset(Data.Dataset):
         self.target = y
 
 # Rotation dataset (Synthetic): rotate 2 circles
+# P(y|X) changes
 class RotateDataset(Data.Dataset):
     def __init__(self):
         super(RotateDataset, self).__init__()
@@ -267,6 +276,7 @@ class RotateDataset(Data.Dataset):
         self.target = y
 
 # Hyperball dataset (Synthetic): x1^2/20^2+(x2-20)^2/15^2=1→x1^2/2^2+(x2-20)^2/30^2=1
+# P(y|X) changes
 class HyperballDataset(Data.Dataset):
     """
     Args:
@@ -330,6 +340,71 @@ class HyperballDataset(Data.Dataset):
         y = y >= 0
         y = np.array(y, dtype='int64')
         self.target = y
+
+# Revolution dataset (Synthetic)
+# Both P(X) and P(y|X) changes
+class RevolutionDataset(Data.Dataset):
+    def __init__(self):
+        super(RevolutionDataset, self).__init__()
+        self.x_range = [-5, 5]
+        self.y_range = [-5, 5]
+        self.num_batch = 20
+        self.n_per_class = 200
+        self.num_class = 2
+        self.t = 0
+        self.data = []
+        self.target = []
+        self.set_t(self.t)
+        self.cate_feat = []
+
+    def __getitem__(self, index):
+        return torch.FloatTensor(self.data[index]), self.target[index]
+
+    def __len__(self):
+        return len(self.target)
+    
+    def set_t(self, t):
+        self.t = t
+        self.data = np.random.normal(size=(self.n_per_class*self.num_class, 2))
+        self.data[:self.n_per_class, 0] = self.data[:self.n_per_class, 0] + 2 * math.cos(2*math.pi*(self.t/(self.num_batch-1))+math.pi)
+        self.data[:self.n_per_class, 1] = self.data[:self.n_per_class, 1] + 2 * math.sin(2*math.pi*(self.t/(self.num_batch-1))+math.pi)
+        self.data[self.n_per_class:, 0] = self.data[self.n_per_class:, 0] + 2 * math.cos(2*math.pi*(self.t/(self.num_batch-1)))
+        self.data[self.n_per_class:, 1] = self.data[self.n_per_class:, 1] + 2 * math.sin(2*math.pi*(self.t/(self.num_batch-1)))
+        self.target = np.zeros(len(self.data), dtype='int64')
+        self.target[self.n_per_class:] = 1
+
+# Forward dataset (Synthetic)
+# Both P(X) and P(y|X) changes
+class ForwardDataset(Data.Dataset):
+    def __init__(self):
+        super(ForwardDataset, self).__init__()
+        self.x_range = [-15, 15]
+        self.y_range = [-5, 5]
+        self.num_batch = 20
+        self.n_per_class = 200
+        self.num_class = 2
+        self.t = 0
+        self.start = -12
+        self.data = []
+        self.target = []
+        self.set_t(self.t)
+        self.cate_feat = []
+
+    def __getitem__(self, index):
+        return torch.FloatTensor(self.data[index]), self.target[index]
+
+    def __len__(self):
+        return len(self.target)
+    
+    def set_t(self, t):
+        self.t = t
+        self.data = np.random.normal(size=(self.n_per_class*self.num_class, 2))
+        self.data[:self.n_per_class, 0] = self.data[:self.n_per_class, 0] + self.start + self.t
+        self.data[:self.n_per_class, 1] = self.data[:self.n_per_class, 1]
+        self.data[self.n_per_class:, 0] = self.data[self.n_per_class:, 0] + self.start + self.t + 4
+        self.data[self.n_per_class:, 1] = self.data[self.n_per_class:, 1]
+        self.target = np.zeros(len(self.data), dtype='int64')
+        self.target[self.n_per_class:] = 1
 
 # Gas sensor dataset
 class GasSensorDataset(Data.Dataset):
@@ -1113,6 +1188,8 @@ set_seed(0)
 dataset_dict = {'translate':TranslateDataset(),
                 'rotate':RotateDataset(),
                 'ball':HyperballDataset(),
+                'revolution':RevolutionDataset(),
+                'forward':ForwardDataset(),
                 'admission':admission_dataset(k=10, normalize=True),
                 'sale':house_sale_dataset(k=10, normalize=True),
                 'house':california_housing_dataset(num_batch=11, normalize=True),

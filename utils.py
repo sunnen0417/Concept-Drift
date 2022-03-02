@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.utils.data as Data
 import matplotlib.pyplot as plt
 from datasets import BufferDataset, SoftmaxDataset, SoftmaxOnlineDataset
+from sklearn.neighbors import KNeighborsClassifier
 
 # Training
 def train(train_loader, F, optimizer, device):
@@ -575,6 +576,59 @@ def update_all_vaes(train_loader, vae_list, optimizer_list, epochs, theta, sampl
                                 shuffle=True, num_workers=num_workers)        
         train_epochs_vae(data_loader, vae_list[i], optimizer_list[i], epochs, theta, cate_feat, device)
 
+
+def test_dynse(test_loader, init_num_neighbors, validation_set, classifier_pool, device):
+    criterion = nn.CrossEntropyLoss()
+    with torch.no_grad():
+        correct = 0
+        total_loss = 0
+        
+        # cls_valid_matrix: #classifiers x #points_in_validation_set
+        for i, cls in enumerate(classifier_pool):
+            cls.to(device)
+            cls.eval()
+            sub_matrix = cls(torch.FloatTensor(validation_set.data).to(device)).max(1)[1] == torch.LongTensor(validation_set.target).to(device)
+            cls_valid_matrix = torch.cat((cls_valid_matrix, sub_matrix.reshape(1,-1))) if i else sub_matrix.reshape(1,-1)  
+            
+        knn_model = KNeighborsClassifier(n_neighbors=init_num_neighbors) 
+        knn_model.fit(validation_set.data, validation_set.target)
+        
+        for data, target in test_loader:  # batch_size is 1
+            # find neighbors and find classifiers
+            num_neighbors = init_num_neighbors
+            keep_classifiers = []
+            while not keep_classifiers and num_neighbors:
+              _, neighbor_indexes = knn_model.kneighbors(data, n_neighbors=num_neighbors)
+              cls_neighbor_matrix = cls_valid_matrix[:, neighbor_indexes.reshape(-1)]  
+              keep = list(cls_neighbor_matrix.sum(dim=1) == num_neighbors)  # classify all neighbors correctly
+              keep_classifiers = [i for i, kp in enumerate(keep) if kp]              
+              num_neighbors -= 1
+              
+            if not keep_classifiers:  # still can not find any classifier even when #neighbors is 1
+              keep_classifiers = [i for i in range(len(classifier_pool))]
+              # keep_classifiers = [-1]
+            
+            # predict
+            data, target = data.to(device), target.to(device)
+            for i, kp in enumerate(keep_classifiers):
+                cls = classifier_pool[kp]
+                cls.to(device)
+                cls.eval()
+                cls_outputs = torch.cat((cls_outputs, cls(data))) if i else cls(data)
+            
+            # majority vote
+            output = cls_outputs.sum(dim=0, keepdim=True)  # to refine
+            output /= len(cls_outputs)  
+            pred_labels = cls_outputs.max(dim=1)[1]
+            pred = torch.mode(pred_labels,dim=0)[0]   
+                                
+            loss = criterion(output, target)
+            total_loss += loss.item() * len(data)
+            correct += pred.eq(target).sum().item()
+    acc = correct / len(test_loader.dataset)
+    total_loss /= len(test_loader.dataset)
+    return total_loss, acc
+
 def split_train_valid(dataset, train_ratio=0.8):
     mask = np.zeros(len(dataset), dtype=bool)
     train_idx = np.random.choice(len(dataset), size=int(train_ratio*len(dataset)), replace=False)
@@ -601,3 +655,103 @@ def split_train_valid(dataset, train_ratio=0.8):
         vset = BufferDataset(np.array(dataset.data)[~mask], np.array(dataset.target)[~mask], target_type='hard')
 
     return tset, vset
+
+
+def get_correct_status(classifier, t_data_loader, device):
+    classifier.to(device), classifier.eval()
+    correct_status = []
+    with torch.no_grad():
+        for data, target in t_data_loader:
+            data, target = data.to(device), target.to(device)
+            output = classifier(data)
+            _, pred = output.max(1)
+            for i in range(target.shape[0]):
+                correct_status.append((pred[i] == target[i]).item())
+    return correct_status
+
+def Q_statistic(correct_status_i, correct_status_j, epsilon):
+    N11 = 0 
+    N10 = 0 
+    N01 = 0
+    N00 = 0
+    for k in range(len(correct_status_i)):
+        if correct_status_i[k] == 1 and correct_status_j[k] == 1:
+            N11 += 1
+        elif correct_status_i[k] == 1 and correct_status_j[k] == 0:
+            N10 += 1
+        elif correct_status_i[k] == 0 and correct_status_j[k] == 1:
+            N01 += 1
+        else:
+            N00 += 1
+    return (N11 * N00 - N01 * N10) / (N11 * N00 + N01 * N10 + epsilon)
+
+def diversity(Q_map, index):
+    sum_q = 0
+    total_num = 0
+    for i in range(len(Q_map)):
+        if i == index:
+            continue
+        for j in range(i + 1, len(Q_map[i])):
+            if j == index:
+                continue
+            sum_q += Q_map[i][j]
+            total_num += 1
+    return 1 - (sum_q / total_num)
+
+def MSE_i(classifier, t_data_loader, device):
+    square_sum = 0
+    data_num = 0
+    classifier.to(device), classifier.eval()
+    with torch.no_grad():
+        for data, target in t_data_loader:
+            data, target = data.to(device), target.to(device)
+            output = classifier(data)
+            output = nn.functional.softmax(output, dim=1)
+            for i in range(target.shape[0]):
+                square_sum += ((1 - output[i][target[i]].item()) ** 2)
+                data_num += 1
+    return square_sum / data_num
+
+def MSE_gamma(t_data_loader, classes, device):
+    sum_of_classes = torch.zeros(classes)
+    MSE_g = 0
+    for data, target in t_data_loader:
+        sum_of_classes = sum_of_classes + torch.bincount(target, minlength=classes) 
+    data_num = sum_of_classes.sum()
+    p_of_classes = sum_of_classes / data_num
+    for c in range(classes):
+        MSE_g += ((p_of_classes[c]) * ((1 - p_of_classes[c]) ** 2))
+    return MSE_g.item()
+
+# for DTEL
+def test_ensemble(test_loader, classifier_list, weight_list, num_classes, device):
+    for classifier in classifier_list:
+        classifier.to(device)
+        classifier.eval()
+    criterion = nn.CrossEntropyLoss()
+    with torch.no_grad():
+        correct = 0
+        total_loss = 0
+        for data, target in test_loader:
+            data, target = data.to(device), target.to(device)
+            output = 0
+            weight_vote = 0
+            weight_sum = 0
+            for classifier, weight in zip(classifier_list, weight_list):
+                out = classifier(data)
+                # for calculating loss
+                output += (out * weight)
+                # for prediction
+                _, pred = out.max(1)
+                vote = nn.functional.one_hot(pred, num_classes=num_classes)
+                weight_vote += vote * weight
+                weight_sum += weight
+            output /= weight_sum
+            loss = criterion(output, target)
+            total_loss += loss.item() * len(data)
+            weight_vote /= weight_sum
+            _, pred = weight_vote.max(1)
+            correct += pred.eq(target).sum().item()
+    acc = correct / len(test_loader.dataset)
+    total_loss /= len(test_loader.dataset)
+    return total_loss, acc

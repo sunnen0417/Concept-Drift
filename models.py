@@ -1,9 +1,11 @@
 import math
+import copy
 import random
 import numpy as np
 import collections
 import torch
 import torch.nn as nn
+from collections import Counter
 from abc import ABC, abstractmethod
 from operator import itemgetter
 from functools import reduce
@@ -156,7 +158,7 @@ class VAE(nn.Module):
         extension = self.decode(mu)[1]
         return extension
 
-# Subspace buffer
+
 class ReplayBuffer(ABC):
 
     @abstractmethod
@@ -167,6 +169,7 @@ class ReplayBuffer(ABC):
     def sample(self, x_batch, y_batch, weights, **kwargs):
         pass
 
+# Subspace buffer
 class SubspaceBuffer(ReplayBuffer):
     def __init__(self, max_centroids: int, max_instances: int, centroids_frac: float=1.0):
         self.max_centroids = max_centroids
@@ -249,6 +252,280 @@ class SubspaceBuffer(ReplayBuffer):
                 break
         return has_cluster_nearby
 
+# Reactive subspace buffer
+class ReactiveSubspaceBuffer(ReplayBuffer):
+
+    def __init__(self, max_centroids: int, max_instances: int, window_size: int=100, switch_thresh: float=0.9, split=False,
+                 split_thresh: float=0.5, split_period: int=1000):
+        super().__init__()
+        self.max_centroids = max_centroids
+        self.max_instances = max_instances
+        self.window_size = window_size
+        self.switch_thresh = switch_thresh
+        self.split = split
+        self.split_thresh = split_thresh
+        self.split_period = split_period
+
+        self.splits_num = 0
+        self.switches_num = 0
+
+        self.centroids = collections.defaultdict(lambda: collections.defaultdict(tuple))
+        self.total_num_centroids = 0
+        self.buffers = collections.defaultdict(lambda: collections.defaultdict(list))
+
+        self.centroids_window_counts = collections.defaultdict(lambda: collections.defaultdict(Counter))
+        self.centroids_window_buffers = collections.defaultdict(lambda: collections.defaultdict(list))
+        self.centroids_window_last_update = collections.defaultdict(lambda: collections.defaultdict(int))
+        self.t = 0
+
+        self.next_centroid_idx = 0
+
+    def add(self, x_batch, y_batch, weights, **kwargs):
+        self.t += len(x_batch)
+        
+        if torch.is_tensor(x_batch):
+            x_batch, y_batch, weights = x_batch.cpu().numpy(), y_batch.cpu().numpy(), weights.cpu().numpy()
+
+        for x, y, w in zip(x_batch, y_batch, weights):
+            if len(self.centroids[y]) < self.max_centroids / 2:
+                self.__add_centroid(x, y, w)
+                continue
+
+            closest_centroid_idx, closest_centroid_y, dist = self.__find_closest_centroid(x)
+
+            if closest_centroid_y == y:
+                self.__update_centroid(x, y, w, closest_centroid_y, closest_centroid_idx)
+                self.__update_centroid_window(x, y, w, closest_centroid_y, closest_centroid_idx)
+            else:
+                w_sum, var = self.centroids[closest_centroid_y][closest_centroid_idx][1:]
+                std = math.sqrt(var.mean() / w_sum)
+
+                if dist / math.sqrt(x.size) <= std:
+                    window_buffer = self.__update_centroid_window(x, y, w, closest_centroid_y, closest_centroid_idx)
+
+                    if len(window_buffer) == self.window_size:
+                        centroid_switch, max_class = self.__check_centroid_switch(closest_centroid_y, closest_centroid_idx)
+                        if centroid_switch:
+                            print('Actual drift happens!')
+                            self.switches_num += 1
+                            self.__switch_centroid(closest_centroid_y, closest_centroid_idx, max_class)
+                else:
+                    closest_y_centroid_idx, y, dist = self.__find_closest_centroid(x, y)
+                    w_sum, var = self.centroids[y][closest_y_centroid_idx][1:]
+                    std = math.sqrt(var.mean() / w_sum)
+
+                    if dist / math.sqrt(x.size) <= std or len(self.centroids_window_buffers[y][closest_y_centroid_idx]) < self.window_size \
+                            or len(self.centroids[y]) >= self.max_centroids:
+                        self.__update_centroid(x, y, w, y, closest_y_centroid_idx)
+                        self.__update_centroid_window(x, y, w, y, closest_y_centroid_idx)
+                    else:
+                        self.__add_centroid(x, y, w)
+
+        if self.split:
+            self.__check_centroids()
+
+    def __add_centroid(self, x, y, w):
+        self.centroids[y][self.next_centroid_idx] = (x, w, np.zeros(x.shape))
+        self.buffers[y][self.next_centroid_idx] = [(x, y, w)]
+        self.centroids_window_counts[y][self.next_centroid_idx] = Counter([y])
+        self.centroids_window_buffers[y][self.next_centroid_idx] = [(x, y, w)]
+        self.centroids_window_last_update[y][self.next_centroid_idx] = self.t
+        self.total_num_centroids += 1
+        self.next_centroid_idx += 1
+
+    def __find_closest_centroid(self, x, y=-1):
+        closest_centroid_idx, closest_centroid_y, min_dist = -1, -1, float('inf')
+        centroids = self.centroids.items() if y < 0 else [(y, self.centroids[y])]
+
+        for cy, class_centroids in centroids:
+            if len(class_centroids) == 0:
+                continue
+
+            centroid_idx, dist = min([(centroid_idx, np.linalg.norm(x - cv[0])) for centroid_idx, cv in class_centroids.items()], key=itemgetter(1))
+            if dist < min_dist:
+                closest_centroid_idx = centroid_idx
+                closest_centroid_y = cy
+                min_dist = dist
+
+        return closest_centroid_idx, closest_centroid_y, min_dist
+
+    def __update_centroid_window(self, x, y, w, centroid_y, centroid_idx):
+        window_buffer = self.centroids_window_buffers[centroid_y][centroid_idx]
+
+        if len(window_buffer) == self.window_size:
+            _, wy, _ = window_buffer.pop(0)
+            self.centroids_window_counts[centroid_y][centroid_idx][wy] -= 1
+
+        window_buffer.append((x, y, w))
+        self.centroids_window_counts[centroid_y][centroid_idx][y] += 1
+        self.centroids_window_last_update[centroid_y][centroid_idx] = self.t
+
+        return window_buffer
+
+    def __update_centroid(self, x, y, w, centroid_y, centroid_idx):
+        mean, w_sum, var = self.centroids[centroid_y][centroid_idx]
+        new_mean = mean + (w / (w_sum + w)) * (x - mean)
+        new_w_sum = w_sum + w
+        new_var = var + w * np.multiply(x - mean, x - new_mean)
+
+        self.centroids[centroid_y][centroid_idx] = (
+            new_mean,
+            new_w_sum,
+            np.array(new_var)
+        )
+
+        if len(self.buffers[centroid_y][centroid_idx]) == self.max_instances:
+            self.buffers[centroid_y][centroid_idx].pop(0)
+
+        self.buffers[centroid_y][centroid_idx].append((x, y, w))
+
+    def __check_centroid_switch(self, centroid_y, centroid_idx):
+        max_class, max_cnt = self.centroids_window_counts[centroid_y][centroid_idx].most_common(1)[0]
+        current_cls_cnt = self.centroids_window_counts[centroid_y][centroid_idx].get(centroid_y)
+
+        return current_cls_cnt / max_cnt < self.switch_thresh, max_class
+
+    def __switch_centroid(self, centroid_y, centroid_idx, new_class):
+        self.__extract_new_centroid(centroid_y, centroid_idx, new_class)
+        self.__remove_centroid(centroid_y, centroid_idx)
+
+    def __extract_new_centroid(self, centroid_y, centroid_idx, new_class, split=False):
+        if centroid_y != new_class and len(self.centroids[new_class]) >= self.max_centroids:
+            return
+        
+        window_buffer = self.centroids_window_buffers[centroid_y][centroid_idx]
+        filtered_window = list(filter(lambda r: r[1] == new_class, window_buffer))
+
+        mean, w_sum, var = filtered_window[0][2] * filtered_window[0][0], filtered_window[0][2], np.zeros(filtered_window[0][0].shape)
+        for i in range(1, len(filtered_window)):
+            fx, _, fw = filtered_window[i]
+            pm = mean
+            w_sum += fw
+            mean = pm + (fw / w_sum) * (fx - pm)
+            var = var + fw * np.multiply(fx - pm, fx - mean)
+
+        self.centroids[new_class][self.next_centroid_idx] = (mean, w_sum, np.array(var))
+        self.buffers[new_class][self.next_centroid_idx] = filtered_window
+        self.centroids_window_counts[new_class][self.next_centroid_idx] = self.centroids_window_counts[centroid_y][centroid_idx].copy() \
+            if not split else Counter({new_class: self.centroids_window_counts[centroid_y][centroid_idx].get(new_class)})
+        self.centroids_window_buffers[new_class][self.next_centroid_idx] = window_buffer.copy() if not split else filtered_window.copy()
+        self.centroids_window_last_update[new_class][self.next_centroid_idx] = self.t
+        self.next_centroid_idx += 1
+        self.total_num_centroids += 1
+
+    def __remove_centroid(self, centroid_y, centroid_idx):
+        del self.centroids[centroid_y][centroid_idx]
+        del self.buffers[centroid_y][centroid_idx]
+        del self.centroids_window_counts[centroid_y][centroid_idx]
+        del self.centroids_window_buffers[centroid_y][centroid_idx]
+        del self.centroids_window_last_update[centroid_y][centroid_idx]
+        self.total_num_centroids -= 1
+
+    def __check_centroids(self):
+        centroids = copy.deepcopy(self.centroids)
+
+        for cls, class_centroids in centroids.items():
+            for centroid_idx, centroid in class_centroids.items():
+                if self.t - self.centroids_window_last_update[cls][centroid_idx] >= self.split_period:
+                    if sum(self.centroids_window_counts[cls][centroid_idx].values()) < 0.4 * self.window_size:
+                        self.__remove_centroid(cls, centroid_idx)
+                    else:
+                        centroid_split, sec_cls = self.__check_centroid_split(cls, centroid_idx)
+
+                        if centroid_split:
+                            self.splits_num += 1
+                            self.__extract_new_centroid(cls, centroid_idx, cls, split=True)
+                            self.__extract_new_centroid(cls, centroid_idx, sec_cls, split=True)
+                            self.__remove_centroid(cls, centroid_idx)
+
+                        self.centroids_window_last_update[cls][centroid_idx] = self.t
+
+    def __check_centroid_split(self, centroid_y, centroid_idx):
+        counts = self.centroids_window_counts[centroid_y][centroid_idx]
+        if len(counts) < 2:
+            return False, -1
+
+        [(first_cls, first_cnt), (sec_cls, sec_cnt)] = counts.most_common(2)
+        if centroid_y != first_cls or sec_cnt == 0:
+            return False, -1
+
+        return (first_cnt / sec_cnt) - 1.0 <= self.split_thresh, sec_cls
+
+    def sample(self, x_batch, y_batch, weights, **kwargs):
+        num_samples_per_instance = self.total_num_centroids
+        num_samples = num_samples_per_instance * len(x_batch)
+
+        input_shape = x_batch[0].shape
+        sampled_x_batch = np.zeros((num_samples, *input_shape))
+        sampled_y_batch = np.zeros(num_samples)
+        sampled_weights = np.zeros(num_samples)
+
+        cls_indices = collections.defaultdict(list)
+        i = 0
+
+        for _ in range(len(x_batch)):
+            for class_idx, centroid_buffers in self.buffers.items():
+                for buffer_idx, centroid_buffer in centroid_buffers.items():
+                    if self.__try_sample(self.centroids_window_counts[class_idx][buffer_idx], class_idx):
+                        (rx, ry, rw) = random.choice(centroid_buffer)
+                        sampled_x_batch[i, :] = rx[:]
+                        sampled_y_batch[i] = ry
+                        sampled_weights[i] = rw
+                        cls_indices[ry].append(i)
+
+                        i += 1
+
+        return self.__resample(sampled_x_batch[:i], sampled_y_batch[:i], sampled_weights[:i], cls_indices)
+
+    @staticmethod
+    def __try_sample(counts, cls):
+        if len(counts) == 1 and list(counts.keys())[0] == cls:
+            return True
+        else:
+            [(first_cls, first_cnt), (sec_cls, sec_cnt)] = counts.most_common(2)
+            if first_cls == cls:
+                r = math.tanh(4 * (first_cnt - sec_cnt) / (first_cnt + sec_cnt))
+                return r > random.random()
+        return False
+
+    @staticmethod
+    def __resample(x_batch, y_batch, weights, cls_indices):
+        max_cnt = max([len(indices) for indices in cls_indices.values()])
+        num_samples = len(cls_indices) * max_cnt
+
+        input_shape = x_batch[0].shape
+        resampled_x_batch = np.zeros((num_samples, *input_shape))
+        resampled_y_batch = np.zeros(num_samples)
+        resampled_weights = np.zeros(num_samples)
+
+        i = 0
+        for cls, indices in cls_indices.items():
+            while len(indices) < max_cnt:
+                indices.append(random.choice(indices))
+
+            resampled_x_batch[i:i + max_cnt, :] = x_batch[indices, :]
+            resampled_y_batch[i:i + max_cnt] = y_batch[indices]
+            resampled_weights[i:i + max_cnt] = weights[indices]
+            i += len(indices)
+
+        return resampled_x_batch, resampled_y_batch, resampled_weights
+
+    def region(self, x):
+        if torch.is_tensor(x):
+            x = x.cpu().numpy()
+        has_cluster_nearby = False
+        for y, class_centroids in self.centroids.items():
+            for centroid_idx, centroid in class_centroids.items():
+                mean, w_sum, var = centroid
+                dist = np.linalg.norm(x-mean)
+                std = math.sqrt(var.mean()/w_sum)
+                if dist / math.sqrt(x.size) <= std:
+                    has_cluster_nearby = True
+                    break
+            if has_cluster_nearby:
+                break
+        return has_cluster_nearby
+    
 # Dynse + DP model
 class DynseDP:
     def __init__(self, w, e, b, k, device):
@@ -337,8 +614,114 @@ class DynseDP:
             classifier.cpu()
         u, cnt = np.unique(ensemble_pred, return_counts=True)
         return u[np.argmax(cnt)]
-                    
-                    
 
+# DDCW
+class DDCW:
+    def __init__(self, e, c, beta, ltc, device):
+        # e: maximum ensemble size, c: number of classes
+        # beta: beta, ltc: life time coefficient
+        # device: device when testing
+        self.e = e
+        self.c = c
+        self.beta = beta
+        self.ltc = ltc
+        self.device = device
+        self.W = []
+        self.ensemble = []
 
-            
+    def test(self, test_loader):
+        criterion = nn.CrossEntropyLoss()
+        with torch.no_grad():
+            correct = 0
+            total_loss = 0
+            for data, target in test_loader:
+                data, target = data.to(self.device), target.to(self.device)
+                output = torch.zeros((data.shape[0], self.c)).to(self.device)
+                weight_vote = torch.zeros((data.shape[0], self.c)).to(self.device)
+                for i in range(len(self.ensemble)):
+                    classifier = self.ensemble[i]
+                    classifier.to(self.device)
+                    classifier.eval()
+                    out = classifier(data)
+                    # for calculating loss
+                    output.add_(out * torch.tensor(self.W[i]).to(self.device))
+                    # for prediction
+                    _, pred = out.max(1)
+                    vote = nn.functional.one_hot(pred, num_classes=self.c)
+                    weight_vote.add_(vote * torch.tensor(self.W[i]).to(self.device))
+                loss = criterion(output, target)
+                total_loss += loss.item() * len(data)
+                _, pred = weight_vote.max(1)
+                correct += pred.eq(target).sum().item()
+        acc = correct / len(test_loader.dataset)
+        total_loss /= len(test_loader.dataset)
+        return total_loss, acc
+
+    def add_classifier(self, classifier):
+        classifier.cpu()
+        classifier.eval()
+        self.ensemble.append(classifier)
+        self.W.append([1. for i in range(self.c)])
+        if len(self.ensemble) > self.e:
+            self.ensemble.pop(0)
+            self.W.pop(0)
+
+    def update_accuracy(self, test_loader):
+        for i in range(len(self.ensemble)):
+            classifier = self.ensemble[i]
+            classifier.to(self.device)
+            classifier.eval()
+            with torch.no_grad():
+                for data, target in test_loader:
+                    data, target = data.to(self.device), target.to(self.device)
+                    output = classifier(data)
+                    for E_pred, y in zip(output.argmax(1), target):
+                        if E_pred == y:
+                            self.W[i][y] *= self.beta
+
+    def multiply_coeff(self):
+        for i in range(len(self.W)-1): # exclude latest model
+            for j in range(len(self.W[i])):
+                self.W[i][j] *= self.ltc
+
+    def update_diversity(self, test_loader, epsilon=1e-5):
+        cnt = 0
+        Q = 0
+        for i in range(len(self.ensemble)):
+            for j in range(i+1, len(self.ensemble)):
+                # pair prediction
+                classifier1 = self.ensemble[i]
+                classifier1.to(self.device)
+                classifier1.eval()
+                classifier2 = self.ensemble[j]
+                classifier2.to(self.device)
+                classifier2.eval()
+                N11, N00, N01, N10 = 0, 0, 0, 0
+                with torch.no_grad():
+                    for data, target in test_loader:
+                        data, target = data.to(self.device), target.to(self.device)
+                        output1 = classifier1(data)
+                        output2 = classifier2(data)
+                        for E1_pred, E2_pred, y in zip(output1.argmax(1), output2.argmax(1), target):
+                            if E1_pred == y and E2_pred == y:
+                                N11 += 1
+                            elif E1_pred != y and E2_pred != y:
+                                N00 += 1
+                            elif E1_pred != y and E2_pred == y:
+                                N01 += 1
+                            else: # E1_pred == y and E2_pred != y:
+                                N10 += 1
+                Q  += (N11 * N00 - N01 * N10) / (N11 * N00 + N01 * N10 + epsilon) # add epsilon to denominator to avoid divided by zero
+                cnt += 1
+        Q /= cnt
+        for i in range(len(self.W)):
+            for j in range(len(self.W[i])):
+                self.W[i][j] += (1 - Q)
+
+    def normalize_weight(self):
+        for i in range(len(self.W[0])):
+            total_weight = 0
+            for j in range(len(self.W)):
+                total_weight += self.W[j][i]
+            for j in range(len(self.W)):
+                self.W[j][i] /= total_weight                    
