@@ -102,7 +102,7 @@ if __name__ == '__main__':
         F = classifier(in_size=dim, out_size=classes).to(device)
         optimizer = optim.Adam(F.parameters(), lr=lr, weight_decay=decay)
         
-        best_acc = 0
+        best_acc = -1
         best_F = None
         best_opt_state_dict = None 
         p = patience

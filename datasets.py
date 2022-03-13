@@ -548,6 +548,243 @@ class CovertypeDataset(Data.Dataset):
         if self.normalize:
             self.data[:, 0:10] = (self.data[:, 0:10] - self.mu) / self.std
 
+# Airline Dataset
+class AirlineDataset(Data.Dataset):
+    def __init__(self, normalize=True):
+        super(AirlineDataset, self).__init__()
+        self.base_dir = 'datasets'
+        self.dataset_dir = 'airline'
+        if os.path.exists(os.path.join(self.base_dir, self.dataset_dir)):
+            print(f'{os.path.join(self.base_dir, self.dataset_dir)} exists!')
+        else:
+            # download the dataset
+            os.makedirs(os.path.join(self.base_dir, self.dataset_dir), exist_ok=True)
+            os.chdir(os.path.join(self.base_dir, self.dataset_dir))
+            os.system('wget -O airlines2.csv https://www.csie.ntu.edu.tw/\~b06504025/airlines2.csv')
+            os.chdir('../..')
+
+        self.n_total = 0
+        with open(os.path.join(self.base_dir, self.dataset_dir, 'airlines2.csv'), 'r') as f:
+            f.readline() # header
+            while 1:
+                line = f.readline()
+                # EOF
+                if line == '':
+                    break
+                self.n_total += 1
+
+        self.n_per_batch = 500
+        self.num_batch = int(self.n_total/self.n_per_batch)
+        self.data = []
+        self.target = []
+        self.normalize= normalize
+        self.mu = None
+        self.std = None
+        self.num_class = 2
+        self.cate_feat = [0, 2, 3, 4]
+        self.numer_feat = [1, 5, 6]
+        self.t = 0
+        self.set_t(self.t)
+
+    def __getitem__(self, index):
+        return torch.FloatTensor(self.data[index]), self.target[index]
+
+    def __len__(self):
+        return len(self.target) 
+
+    def set_t(self, t):
+        self.t = t
+        self.data = []
+        self.target = []
+        # set starting and ending indices
+        s = self.t * self.n_per_batch
+        if self.t == self.num_batch - 1:
+            e = self.n_total
+        else:
+            e = (self.t + 1) * self.n_per_batch
+
+        with open(os.path.join(self.base_dir, self.dataset_dir, 'airlines2.csv'), 'r') as f:
+            i = 0
+            f.readline() # header
+            while 1:
+                line = f.readline()
+                if i >= e:
+                    break
+                if i >= s and i < e: 
+                    a = line.split(',')
+                    self.target.append(int(a[-1]))
+                    l = []
+                    for j in range(0, len(a)-1):
+                        l.append(float(a[j]))
+                    self.data.append(l)
+                i += 1
+        self.data = np.array(self.data, dtype='float32')
+        self.target = np.array(self.target, dtype='int64')
+
+        if t == 0:
+            num_cols = self.data.shape[1]
+            self.mu, self.std = np.zeros(num_cols), np.ones(num_cols)
+            for i in range(num_cols):
+                if i in self.numer_feat:
+                    self.mu[i] = np.mean(self.data[:, i], axis=0)
+                    self.std[i] = np.maximum(np.std(self.data[:, i], axis=0), 1e-5)
+
+        if self.normalize:
+            for i in range(self.data.shape[1]):
+                if i in self.numer_feat:
+                    self.data[:, i] = (self.data[:, i] - self.mu[i]) / self.std[i]
+
+# Weather Dataset
+class WeatherDataset(Data.Dataset):
+    def __init__(self, normalize=True):
+        super(WeatherDataset, self).__init__()
+        self.base_dir = 'datasets'
+        self.dataset_dir = 'weather'
+        if os.path.exists(os.path.join(self.base_dir, self.dataset_dir)):
+            print(f'{os.path.join(self.base_dir, self.dataset_dir)} exists!')
+        else:
+            # download the dataset
+            os.makedirs(os.path.join(self.base_dir, self.dataset_dir), exist_ok=True)
+            os.chdir(os.path.join(self.base_dir, self.dataset_dir))
+            os.system('wget -O weather.csv https://www.csie.ntu.edu.tw/\~b06504025/weather.csv')
+            os.chdir('../..')
+
+        self.n_total = 0
+        with open(os.path.join(self.base_dir, self.dataset_dir, 'weather.csv'), 'r') as f:
+            f.readline() # header
+            while 1:
+                line = f.readline()
+                # EOF
+                if line == '':
+                    break
+                self.n_total += 1
+
+        self.n_per_batch = 30
+        self.num_batch = int(self.n_total/self.n_per_batch)
+        self.data = []
+        self.target = []
+        self.normalize= normalize
+        self.mu = None
+        self.std = None
+        self.t = 0
+        self.set_t(self.t)
+        self.num_class = 2
+        self.cate_feat = []
+
+    def __getitem__(self, index):
+        return torch.FloatTensor(self.data[index]), self.target[index]
+
+    def __len__(self):
+        return len(self.target) 
+
+    def set_t(self, t):
+        self.t = t
+        self.data = []
+        self.target = []
+        # set starting and ending indices
+        s = self.t * self.n_per_batch
+        if self.t == self.num_batch - 1:
+            e = self.n_total
+        else:
+            e = (self.t + 1) * self.n_per_batch
+
+        with open(os.path.join(self.base_dir, self.dataset_dir, 'weather.csv'), 'r') as f:
+            i = 0
+            f.readline() # header
+            while 1:
+                line = f.readline()
+                if i >= e:
+                    break
+                if i >= s and i < e: 
+                    a = line.split(',')
+                    self.target.append(int(a[-1]))
+                    l = []
+                    for j in range(0, len(a)-1):
+                        l.append(float(a[j]))
+                    self.data.append(l)
+                i += 1
+        self.data = np.array(self.data, dtype='float32')
+        self.target = np.array(self.target, dtype='int64')
+
+        if t == 0:
+            self.mu = np.mean(self.data[:, 0:8], axis=0)
+            self.std = np.maximum(np.std(self.data[:, 0:8], axis=0), 1e-5)
+
+        if self.normalize:
+            self.data[:, 0:8] = (self.data[:, 0:8] - self.mu) / self.std
+
+
+# Spam Dataset
+class SpamDataset(Data.Dataset):
+    def __init__(self, normalize=False):
+        super(SpamDataset, self).__init__()
+        self.base_dir = 'datasets'
+        self.dataset_dir = 'spam'
+        if os.path.exists(os.path.join(self.base_dir, self.dataset_dir)):
+            print(f'{os.path.join(self.base_dir, self.dataset_dir)} exists!')
+        else:
+            # download the dataset
+            os.makedirs(os.path.join(self.base_dir, self.dataset_dir), exist_ok=True)
+            os.chdir(os.path.join(self.base_dir, self.dataset_dir))
+            os.system('wget -O spamassassian.csv https://www.csie.ntu.edu.tw/\~b06504025/spamassassian.csv')
+            os.chdir('../..')
+
+        self.n_total = 0
+        with open(os.path.join(self.base_dir, self.dataset_dir, 'spamassassian.csv'), 'r') as f:
+            while 1:
+                line = f.readline()
+                # EOF
+                if line == '':
+                    break
+                self.n_total += 1
+
+        assert(self.n_total == 9324)
+        self.n_per_batch = 50
+        self.num_batch = int(self.n_total/self.n_per_batch)
+        self.data = []
+        self.target = []
+        self.normalize= normalize
+        self.mu = None
+        self.std = None
+        self.t = 0
+        self.set_t(self.t)
+        self.num_class = 2
+        self.cate_feat = []
+
+    def __getitem__(self, index):
+        return torch.FloatTensor(self.data[index]), self.target[index]
+
+    def __len__(self):
+        return len(self.target) 
+
+    def set_t(self, t):
+        self.t = t
+        self.data = []
+        self.target = []
+        # set starting and ending indices
+        s = self.t * self.n_per_batch
+        if self.t == self.num_batch - 1:
+            e = self.n_total
+        else:
+            e = (self.t + 1) * self.n_per_batch
+
+        with open(os.path.join(self.base_dir, self.dataset_dir, 'spamassassian.csv'), 'r') as f:
+            i = 0
+            while 1:
+                line = f.readline()
+                if i >= e:
+                    break
+                if i >= s and i < e: 
+                    a = line.split(',')
+                    self.target.append(int(a[-1]))
+                    l = []
+                    for j in range(0, len(a)-1):
+                        l.append(float(a[j]))
+                    self.data.append(l)
+                i += 1
+        self.data = np.array(self.data, dtype='float32')
+        self.target = np.array(self.target, dtype='int64')
+
 # KDD99 dataset
 def one_hot_kdd(df, one_hot_features):
     for feature in one_hot_features:
@@ -1199,6 +1436,9 @@ dataset_dict = {'translate':TranslateDataset(),
                 'price':ford_price_dataset(time_slice=10, normalize=True),
                 'gas':GasSensorDataset(normalize=True),
                 'covertype':CovertypeDataset(normalize=True),
+                'airline': AirlineDataset(normalize=True),
+                'weather': WeatherDataset(normalize=True),
+                'spam': SpamDataset(normalize=False), #The dataset has already been encoded as 0/1 features
                 'kdd':KDD99Dataset(normalize=True),
                 'electricity':ElectricityDataset(normalize=False), #The dataset has already been normalized originally
                 'onp':ONPDataset(normalize=True)}

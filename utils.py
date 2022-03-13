@@ -81,6 +81,112 @@ def test_soft(test_loader, F, device, return_softmax=False):
         return total_loss, softmax_log
     return total_loss
 
+class ConditionalEntropyLoss(torch.nn.Module):
+    def __init__(self):
+        super(ConditionalEntropyLoss, self).__init__()
+
+    def forward(self, logit):
+        b = nn.functional.softmax(logit, dim=1) * nn.functional.log_softmax(logit, dim=1)
+        b = b.sum(dim=1)
+        return -1.0 * b.mean(dim=0)
+
+class VAT(nn.Module):
+    def __init__(self, model, radius, n_power):
+        super(VAT, self).__init__()
+        self.n_power = n_power
+        self.XI = 1e-6
+        self.model = model
+        self.epsilon = radius
+
+    def forward(self, X, logit):
+        vat_loss = self.virtual_adversarial_loss(X, logit)
+        return vat_loss
+
+    def generate_virtual_adversarial_perturbation(self, x, logit):
+        device = x.device
+        d = torch.randn_like(x, device=device)
+
+        for _ in range(self.n_power):
+            d = self.XI * self.get_normalized_vector(d).requires_grad_()
+            logit_m = self.model(x + d)
+            dist = self.kl_divergence_with_logit(logit, logit_m)
+            grad = torch.autograd.grad(dist, [d])[0]
+            d = grad.detach()
+
+        return self.epsilon * self.get_normalized_vector(d)
+
+    def kl_divergence_with_logit(self, q_logit, p_logit):
+        q = nn.functional.softmax(q_logit, dim=1)
+        qlogq = torch.mean(torch.sum(q * nn.functional.log_softmax(q_logit, dim=1), dim=1))
+        qlogp = torch.mean(torch.sum(q * nn.functional.log_softmax(p_logit, dim=1), dim=1))
+        return qlogq - qlogp
+
+    def get_normalized_vector(self, d):
+        return nn.functional.normalize(d.view(d.size(0), -1), p=2, dim=1).reshape(d.size())
+
+    def virtual_adversarial_loss(self, x, logit):
+        r_vadv = self.generate_virtual_adversarial_perturbation(x, logit)
+        logit_p = logit.detach()
+        logit_m = self.model(x + r_vadv)
+        loss = self.kl_divergence_with_logit(logit_p, logit_m)
+        return loss
+    
+# Training using soft label + DIRT-T cluster assumption
+def train_soft_dirt(train_loader, F, optimizer, F_old, radius, n_power, lamb, beta, device):
+    F.to(device)
+    F.train()
+    F_old.to(device)
+    F_old.eval()
+    criterion1 = nn.KLDivLoss(reduction='batchmean')
+    criterion2 = ConditionalEntropyLoss()
+    criterion3 = VAT(F, radius, n_power)
+    for data, target in train_loader:
+        data, target = data.to(device), target.to(device)
+        optimizer.zero_grad()
+        logit = F(data)
+        logit_old = F_old(data)
+        logit_old = logit_old.detach()
+        output = nn.functional.log_softmax(logit, dim=1)
+        loss1 = criterion1(output, target)
+        loss2 = criterion2(logit)
+        loss3 = criterion3(data, logit)
+        loss4 = criterion1(output, nn.functional.softmax(logit_old, dim=1))
+        loss = loss1 + lamb * (loss2 + loss3) + beta * loss4
+        loss.backward()
+        optimizer.step()
+
+# Testing using soft label + DIRT-T cluster assumption
+def test_soft_dirt(test_loader, F, F_old, radius, n_power, lamb, beta, device, return_softmax=False):
+    F.to(device)
+    F.eval()
+    F_old.to(device)
+    F_old.eval()
+    criterion1 = nn.KLDivLoss(reduction='batchmean')
+    criterion2 = ConditionalEntropyLoss()
+    criterion3 = VAT(F, radius, n_power)
+    if return_softmax:
+        softmax_log = []
+    total_loss = 0
+    for data, target in test_loader:
+        data, target = data.to(device), target.to(device)
+        logit = F(data)
+        logit_old = F_old(data)
+        logit_old = logit_old.detach()
+        output = nn.functional.log_softmax(logit, dim=1)
+        loss1 = criterion1(output, target)
+        loss2 = criterion2(logit)
+        loss3 = criterion3(data, logit)
+        loss4 = criterion1(output, nn.functional.softmax(logit_old, dim=1))
+        loss = loss1 + lamb * (loss2 + loss3) + beta * loss4
+        total_loss += loss.item() * len(data)
+        if return_softmax:
+            prob = nn.functional.softmax(logit, dim=1).tolist()
+            softmax_log += prob
+    total_loss /= len(test_loader.dataset)
+    if return_softmax:
+        return total_loss, softmax_log
+    return total_loss
+
 # cost sensitive loss
 class CostSensitiveLoss(nn.Module):
     def __init__(self):
@@ -755,3 +861,10 @@ def test_ensemble(test_loader, classifier_list, weight_list, num_classes, device
     acc = correct / len(test_loader.dataset)
     total_loss /= len(test_loader.dataset)
     return total_loss, acc
+
+# bootstrapping for softmax_log
+def bootstrap(softmax_log):
+    s = np.array(softmax_log)
+    n = s.shape[1]
+    idx = np.random.choice(n, size=n, replace=True)
+    return s[:,idx].tolist()

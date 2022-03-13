@@ -171,7 +171,7 @@ if __name__ == '__main__':
             F = copy.deepcopy(classifier_list[-1]).to(device)
         optimizer = optim.Adam(F.parameters(), lr=lr, weight_decay=decay)            
         
-        best_acc = 0
+        best_acc = -1
         best_F = None
         p = patience
         for i in range(epochs):

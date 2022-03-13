@@ -151,7 +151,7 @@ if __name__ == '__main__':
                                     shuffle=True, num_workers=num_workers)
         v_aug_data_loader = Data.DataLoader(vset, batch_size=batch_size, 
                                     shuffle=False, num_workers=num_workers)
-        best_acc = 0
+        best_acc = -1
         best_F = None
         best_opt_state_dict = None 
         p = patience
@@ -283,7 +283,7 @@ if __name__ == '__main__':
                                                   shuffle=True, num_workers=num_workers)
                     v_data_loader = Data.DataLoader(vset, batch_size=batch_size, 
                                                   shuffle=False, num_workers=num_workers)
-                    best_acc = 0
+                    best_acc = -1
                     best_F = None
                     best_opt_state_dict = None 
                     p = patience
@@ -314,7 +314,7 @@ if __name__ == '__main__':
                                                   shuffle=True, num_workers=num_workers)
                     v_data_loader = Data.DataLoader(vset, batch_size=batch_size, 
                                                   shuffle=False, num_workers=num_workers)
-                    best_acc = 0
+                    best_acc = -1
                     best_F = None
                     best_opt_state_dict = None 
                     p = patience
