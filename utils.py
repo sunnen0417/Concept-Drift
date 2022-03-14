@@ -5,6 +5,7 @@ import torch.utils.data as Data
 import matplotlib.pyplot as plt
 from datasets import BufferDataset, SoftmaxDataset, SoftmaxOnlineDataset
 from sklearn.neighbors import KNeighborsClassifier
+import torch.optim as optim
 
 # Training
 def train(train_loader, F, optimizer, device):
@@ -81,6 +82,24 @@ def test_soft(test_loader, F, device, return_softmax=False):
         return total_loss, softmax_log
     return total_loss
 
+class EMA:
+    def __init__(self, decay):
+        self.decay = decay
+        self.shadow = {}
+
+    def register(self, model):
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                self.shadow[name] = param.data.clone()
+        self.params = self.shadow.keys()
+
+    def __call__(self, model):
+        if self.decay > 0:
+            for name, param in model.named_parameters():
+                if name in self.params and param.requires_grad:
+                    self.shadow[name] -= (1 - self.decay) * (self.shadow[name] - param.data)
+                    param.data = self.shadow[name]
+
 class ConditionalEntropyLoss(torch.nn.Module):
     def __init__(self):
         super(ConditionalEntropyLoss, self).__init__()
@@ -91,20 +110,20 @@ class ConditionalEntropyLoss(torch.nn.Module):
         return -1.0 * b.mean(dim=0)
 
 class VAT(nn.Module):
-    def __init__(self, model, radius, n_power):
+    def __init__(self, XI, perturb_radius, model, device):
         super(VAT, self).__init__()
-        self.n_power = n_power
-        self.XI = 1e-6
+        self.device = device
+        self.n_power = 1  
+        self.XI = XI
         self.model = model
-        self.epsilon = radius
+        self.epsilon = perturb_radius
 
     def forward(self, X, logit):
         vat_loss = self.virtual_adversarial_loss(X, logit)
         return vat_loss
 
     def generate_virtual_adversarial_perturbation(self, x, logit):
-        device = x.device
-        d = torch.randn_like(x, device=device)
+        d = torch.randn_like(x).to(self.device)
 
         for _ in range(self.n_power):
             d = self.XI * self.get_normalized_vector(d).requires_grad_()
@@ -132,14 +151,14 @@ class VAT(nn.Module):
         return loss
     
 # Training using soft label + DIRT-T cluster assumption
-def train_soft_dirt(train_loader, F, optimizer, F_old, radius, n_power, lamb, beta, device):
+def train_soft_dirt(train_loader, F, optimizer, F_old, radius, lamb, beta, device):
     F.to(device)
     F.train()
     F_old.to(device)
     F_old.eval()
     criterion1 = nn.KLDivLoss(reduction='batchmean')
     criterion2 = ConditionalEntropyLoss()
-    criterion3 = VAT(F, radius, n_power)
+    criterion3 = VAT(1e-6, radius, F, device)
     for data, target in train_loader:
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
@@ -156,14 +175,14 @@ def train_soft_dirt(train_loader, F, optimizer, F_old, radius, n_power, lamb, be
         optimizer.step()
 
 # Testing using soft label + DIRT-T cluster assumption
-def test_soft_dirt(test_loader, F, F_old, radius, n_power, lamb, beta, device, return_softmax=False):
+def test_soft_dirt(test_loader, F, F_old, radius, lamb, beta, device, return_softmax=False):
     F.to(device)
     F.eval()
     F_old.to(device)
     F_old.eval()
     criterion1 = nn.KLDivLoss(reduction='batchmean')
     criterion2 = ConditionalEntropyLoss()
-    criterion3 = VAT(F, radius, n_power)
+    criterion3 = VAT(1e-6, radius, F, device)
     if return_softmax:
         softmax_log = []
     total_loss = 0
@@ -868,3 +887,116 @@ def bootstrap(softmax_log):
     n = s.shape[1]
     idx = np.random.choice(n, size=n, replace=True)
     return s[:,idx].tolist()
+
+### DTEL_DP (soft vote)
+def dtel_test_ensemble(test_loader, classifier_pool, pred_classifier_pool, device): 
+    criterion = nn.CrossEntropyLoss()
+    correct = 0
+    total_loss = 0
+    with torch.no_grad():
+        for data, target in test_loader:  # batch_size is 1
+            keep_classifiers = classifier_pool + pred_classifier_pool 
+            data, target = data.to(device), target.to(device)
+            for i, cls in enumerate(keep_classifiers):
+                cls.to(device)
+                cls.eval()
+                cls_outputs = torch.cat((cls_outputs, cls(data))) if i else cls(data) 
+            
+            cls_softmax = nn.Softmax(dim=1)(cls_outputs)
+            output = cls_softmax.mean(dim=0, keepdim=True)
+            pred = output.argmax()
+                      
+            loss = criterion(output, target)
+            total_loss += loss.item() * len(data)
+            correct += pred.eq(target).sum().item()
+    acc = correct / len(test_loader.dataset)
+    total_loss /= len(test_loader.dataset)
+    return total_loss, acc
+    
+
+### DTEL_DP (cluster assumption weighted vote)  
+def refine_ca(ca_epochs, ca_lr, ema_decay, XI, perturb_radius, data_loader, F, device):
+    F.to(device)
+    F.train()
+    optimizer = optim.Adam(F.parameters(), lr=ca_lr)
+    cent = ConditionalEntropyLoss().to(device)
+    vat_loss = VAT(XI, perturb_radius, F, device).to(device)
+    ema = EMA(ema_decay)
+    ema.register(F)
+    
+    for epoch in range(ca_epochs):
+        for data, _ in data_loader:
+            data = data.to(device)
+            optimizer.zero_grad()
+            output = F(data)
+            loss_cent = cent(output)
+            loss_vat = vat_loss(data, output)
+            loss = loss_cent + loss_vat 
+            
+            loss.backward()
+            optimizer.step()
+            
+            ema(F)
+            
+def get_ensemble_ca_weight(cls_neighbor_softmax, epsilon=1e-8):
+    weight = [] 
+    ca_softmax = cls_neighbor_softmax[-1]
+    for i, c_softmax in enumerate(cls_neighbor_softmax[:-1]):
+        # for each neighbor
+        for j, (c_soft, ca_soft) in enumerate(zip(c_softmax, ca_softmax)):
+            if not j:
+                dist = nn.KLDivLoss()(c_soft.log(), ca_soft).item() 
+            else:
+                dist += nn.KLDivLoss()(c_soft.log(), ca_soft).item() 
+        weight.append(1.0 / (dist + epsilon))
+    
+    weight = nn.functional.softmax(torch.FloatTensor(weight), dim=0)
+    return weight
+    
+def dtel_test_ensemble_ca(test_loader, validation_set, F_ca, classifier_pool, pred_classifier_pool, num_neighbors, device): 
+    criterion = nn.CrossEntropyLoss()
+    with torch.no_grad():
+        correct = 0
+        total_loss = 0
+               
+        for i, cls in enumerate(classifier_pool+pred_classifier_pool+[F_ca]):
+            cls.to(device)
+            cls.eval()
+            with torch.no_grad():
+                valid_logit = cls(torch.FloatTensor(validation_set.data).to(device)) 
+                valid_softmax = nn.Softmax(dim=1)(valid_logit)
+                cls_valid_softmax = torch.cat((cls_valid_softmax, valid_softmax.unsqueeze(0))) if i else valid_softmax.unsqueeze(0)  
+                
+        knn_model = KNeighborsClassifier(n_neighbors=num_neighbors) 
+        knn_model.fit(validation_set.data, validation_set.target)
+        
+        for data, target in test_loader:  # batch_size is 1
+            # find neighbors
+            _, neighbor_indexes = knn_model.kneighbors(data, n_neighbors=num_neighbors)
+            # get {all c_softmax for c in E & E' and ca_softmax} of each neighbor
+            cls_neighbor_softmax = cls_valid_softmax[:, neighbor_indexes.reshape(-1),:]  
+            cls_weight = get_ensemble_ca_weight(cls_neighbor_softmax).reshape(-1,1).to(device)
+            
+            # predict
+            keep_classifiers = classifier_pool + pred_classifier_pool
+            data, target = data.to(device), target.to(device)
+            for i, cls in enumerate(keep_classifiers):
+                cls.to(device)
+                cls.eval()
+                cls_outputs = torch.cat((cls_outputs, cls(data))) if i else cls(data)
+                
+            # weighted vote
+            cls_softmax = nn.Softmax(dim=1)(cls_outputs)
+            weighted_softmax = cls_weight * cls_softmax
+            weighted_sum = weighted_softmax.sum(dim=0, keepdim=True)
+            
+            output = weighted_sum/cls_weight.sum()
+            pred_labels = weighted_sum.argmax()
+                                
+            loss = criterion(output, target)
+            total_loss += loss.item() * len(data)
+            correct += pred_labels.eq(target).sum().item()
+            
+    acc = correct / len(test_loader.dataset)
+    total_loss /= len(test_loader.dataset)
+    return total_loss, acc
