@@ -549,6 +549,13 @@ class CovertypeDataset(Data.Dataset):
             self.data[:, 0:10] = (self.data[:, 0:10] - self.mu) / self.std
 
 # Airline Dataset
+def one_hot_airline(df, one_hot_features):
+    for feature in one_hot_features:
+        temp = pd.get_dummies(df[feature], prefix = feature)
+        df = df.join(temp)
+        df = df.drop(feature, axis=1)
+    return df
+
 class AirlineDataset(Data.Dataset):
     def __init__(self, normalize=True):
         super(AirlineDataset, self).__init__()
@@ -563,26 +570,18 @@ class AirlineDataset(Data.Dataset):
             os.system('wget -O airlines2.csv https://www.csie.ntu.edu.tw/\~b06504025/airlines2.csv')
             os.chdir('../..')
 
-        self.n_total = 0
-        with open(os.path.join(self.base_dir, self.dataset_dir, 'airlines2.csv'), 'r') as f:
-            f.readline() # header
-            while 1:
-                line = f.readline()
-                # EOF
-                if line == '':
-                    break
-                self.n_total += 1
-
         self.n_per_batch = 500
-        self.num_batch = int(self.n_total/self.n_per_batch)
+        self.num_batch = None
+        self.alldata = []
+        self.alltarget = []
         self.data = []
         self.target = []
-        self.normalize= normalize
+        self.normalize = normalize
         self.mu = None
         self.std = None
         self.num_class = 2
-        self.cate_feat = [0, 2, 3, 4]
-        self.numer_feat = [1, 5, 6]
+        self.normalize_indices = None
+        self.preprocess(os.path.join(self.base_dir, self.dataset_dir, 'airlines2.csv'))
         self.t = 0
         self.set_t(self.t)
 
@@ -590,49 +589,29 @@ class AirlineDataset(Data.Dataset):
         return torch.FloatTensor(self.data[index]), self.target[index]
 
     def __len__(self):
-        return len(self.target) 
+        return len(self.target)
+
+    def preprocess(self, file_path):
+        df = pd.read_csv(file_path)
+        one_hot_features = ['Airline', 'AirportFrom', 'AirportTo', 'DayOfWeek']
+        df = one_hot_airline(df, one_hot_features)
+        self.alldata = df.drop(['target'], axis=1).to_numpy()
+        self.alltarget = df['target'].to_numpy()
+        self.num_batch = int(self.alldata.shape[0]/self.n_per_batch)
+
+        self.normalize_indices = [0, 1, 2]
+        self.mu = np.mean(self.alldata[:self.n_per_batch, self.normalize_indices], axis = 0)
+        self.std = np.maximum(np.std(self.alldata[:self.n_per_batch, self.normalize_indices], axis = 0), 1e-5)
 
     def set_t(self, t):
         self.t = t
-        self.data = []
-        self.target = []
-        # set starting and ending indices
         s = self.t * self.n_per_batch
-        if self.t == self.num_batch - 1:
-            e = self.n_total
-        else:
-            e = (self.t + 1) * self.n_per_batch
-
-        with open(os.path.join(self.base_dir, self.dataset_dir, 'airlines2.csv'), 'r') as f:
-            i = 0
-            f.readline() # header
-            while 1:
-                line = f.readline()
-                if i >= e:
-                    break
-                if i >= s and i < e: 
-                    a = line.split(',')
-                    self.target.append(int(a[-1]))
-                    l = []
-                    for j in range(0, len(a)-1):
-                        l.append(float(a[j]))
-                    self.data.append(l)
-                i += 1
-        self.data = np.array(self.data, dtype='float32')
-        self.target = np.array(self.target, dtype='int64')
-
-        if t == 0:
-            num_cols = self.data.shape[1]
-            self.mu, self.std = np.zeros(num_cols), np.ones(num_cols)
-            for i in range(num_cols):
-                if i in self.numer_feat:
-                    self.mu[i] = np.mean(self.data[:, i], axis=0)
-                    self.std[i] = np.maximum(np.std(self.data[:, i], axis=0), 1e-5)
-
+        e = (self.t + 1) * self.n_per_batch
+        self.data = self.alldata[s: e, :]
+        self.target = self.alltarget[s: e]
         if self.normalize:
-            for i in range(self.data.shape[1]):
-                if i in self.numer_feat:
-                    self.data[:, i] = (self.data[:, i] - self.mu[i]) / self.std[i]
+            self.data[:, self.normalize_indices] \
+                = (self.data[:, self.normalize_indices] - self.mu) / self.std
 
 # Weather Dataset
 class WeatherDataset(Data.Dataset):
