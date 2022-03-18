@@ -11,6 +11,8 @@ NTU MSLAB Concept drift team
 * experiment_ddcw.py: DDCW framework
 * experiment_test_dp.py: Train the dynamic predictor using testing data
 * experiment_test_multi_dp.py: Train multiple dynamic predictors using bootstrapping on testing data
+* experiment_dtel_dp.py: Use the dynamic predictor to generate a pool of future classifiers based on validation set. Voting is done by previous classifiers and future classifiers 
+* experiment_test_dp_dtel.py: Use the dynamic predictor to generate a pool of future classifiers based on testing set. Voting is done by previous classifiers and future classifiers 
 * datasets.py: Datasets for the experiment  
 * utils.py: Some utilities of training and testing methods  
 * models.py: Models for the experiment, e.g., classifier, DP and VAE  
@@ -240,6 +242,27 @@ python3 experiment_vae.py --last_step_method soft --dataset gas
 --ema_decay: set cluster assumption model weight decay (type=float, default=0.998)
 --perturb_radius: set perturbation radius for virtual adversarial perturbation (type=float, default=0.1)
 --XI: set scaling size for virtual adversarial perturbation (type=float, default=0.1)
+```
+
+* experiment_test_dp_dtel.py
+```
+--seed: set random seed (type=int, default=0)
+--num_workers: set workers number (type=int, default=0)
+--batch_size: set batch size (type=int, default=64)
+--lr: set classifier learning rate (type=float, default=2e-3)
+--epochs: set classifier training epochs (type=int, default=50)
+--decay: set classifier weight decay (type=float, default=5e-5)
+--d_lr: set dynamic predictor learning rate (type=float, default=1e-3)
+--d_epochs: set dynamic predictor training epochs (type=int, default=50)
+--d_decay: set dynamic predictor weight decay (type=float, default=0)
+--finetuned_epochs: number of epochs to train for fine-tuning the historical classifiers (type=int, default=5)
+--activate_dynamic_t: set when to activate the dynamic predictor for prediction (type=int, default=3)
+--max_ensemble_size: maximum number of base classifiers in the ensemble (type=int, default=25)
+--dataset: set the dataset for the experiment (type=str, default='translate', option={'translate', 'rotate', 'ball', 'gas', 'covertype', ...})
+--classifier: set the classifier type (type=str, default='lr', option={'lr':logistic regression, 'mlp':neural network})
+--device: set device (type=str, default='cuda:0', option={'cpu', 'cuda:0', 'cuda:1', ...})
+--train_ratio: set the ratio of the training set while splitting (type=float, default=0.8)
+--patience: set the patience for early stopping (type=int, default=7)
 ```
 
 ## Note

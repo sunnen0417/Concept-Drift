@@ -1000,3 +1000,37 @@ def dtel_test_ensemble_ca(test_loader, validation_set, F_ca, classifier_pool, pr
     acc = correct / len(test_loader.dataset)
     total_loss /= len(test_loader.dataset)
     return total_loss, acc
+
+
+### Test DP DTEL (weighted soft vote)
+def test_dp_dtel_test_ensemble(test_loader, classifier_list, w, pred_classifier_list, pred_w, device): 
+    correct = 0
+    keep_classifiers = classifier_list + pred_classifier_list
+    keep_w = w + pred_w
+    keep_w = torch.FloatTensor(keep_w).view(-1, 1).to(device)
+    with torch.no_grad():
+        for data, target in test_loader:  # batch_size is 1
+            data, target = data.to(device), target.to(device)
+            for i, cls in enumerate(keep_classifiers):
+                cls.to(device)
+                cls.eval()
+                cls_outputs = torch.cat((cls_outputs, cls(data))) if i else cls(data) 
+            
+            cls_softmax = nn.Softmax(dim=1)(cls_outputs)
+            weight_vote = cls_softmax * keep_w
+            output = weight_vote.sum(dim=0, keepdim=True)
+            pred = output.argmax()
+            correct += pred.eq(target).sum().item()
+    acc = correct / len(test_loader.dataset)
+    return acc
+
+def test_dp_dtel_update_accuracy(test_loader, classifier_list, pred_classifier_list, device):
+    keep_classifiers = classifier_list + pred_classifier_list
+    keep_w = []
+    for i in range(len(keep_classifiers)):
+        classifier = keep_classifiers[i]
+        loss, acc = test(test_loader, classifier, device)
+        keep_w.append(acc)
+    return keep_w[0:len(classifier_list)], keep_w[len(classifier_list):]
+    
+    
