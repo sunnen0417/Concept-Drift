@@ -1003,7 +1003,7 @@ def dtel_test_ensemble_ca(test_loader, validation_set, F_ca, classifier_pool, pr
 
 
 ### Test DP DTEL (weighted soft vote)
-def test_dp_dtel_test_ensemble(test_loader, classifier_list, w, pred_classifier_list, pred_w, device): 
+def test_dp_dtel_test_ensemble(test_loader, classifier_list, w, pred_classifier_list, pred_w, num_classes, device, voting='hard'): 
     correct = 0
     keep_classifiers = classifier_list + pred_classifier_list
     keep_w = w + pred_w
@@ -1015,16 +1015,20 @@ def test_dp_dtel_test_ensemble(test_loader, classifier_list, w, pred_classifier_
                 cls.to(device)
                 cls.eval()
                 cls_outputs = torch.cat((cls_outputs, cls(data))) if i else cls(data) 
-            
-            cls_softmax = nn.Softmax(dim=1)(cls_outputs)
-            weight_vote = cls_softmax * keep_w
+            if voting == 'soft':
+                cls_softmax = nn.Softmax(dim=1)(cls_outputs)
+                weight_vote = cls_softmax * keep_w
+            elif voting == 'hard':
+                _, vote = cls_outputs.max(1)
+                vote = nn.functional.one_hot(vote, num_classes=num_classes)
+                weight_vote = vote * keep_w
             output = weight_vote.sum(dim=0, keepdim=True)
             pred = output.argmax()
             correct += pred.eq(target).sum().item()
     acc = correct / len(test_loader.dataset)
     return acc
 
-def test_dp_dtel_update_accuracy(test_loader, classifier_list, pred_classifier_list, device):
+def test_dp_dtel_get_feedback_acc(test_loader, classifier_list, pred_classifier_list, device):
     keep_classifiers = classifier_list + pred_classifier_list
     keep_w = []
     for i in range(len(keep_classifiers)):
