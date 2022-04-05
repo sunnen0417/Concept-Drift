@@ -13,7 +13,7 @@ NTU MSLAB Concept drift team
 * experiment_test_multi_dp.py: Train multiple dynamic predictors using bootstrapping on testing data
 * experiment_dtel_dp.py: Use the dynamic predictor to generate a pool of future classifiers based on validation set. Average soft voting is done by previous classifiers and future classifiers 
 * experiment_test_dp_dtel.py: Use the dynamic predictor to generate a pool of future classifiers based on testing set. Average soft voting is done by previous classifiers and future classifiers
-* experiment_test_dp_dtel_rule.py: Use the dynamic predictor to generate a pool of future classifiers based on testing set. Ruled-based weighted soft voting is done by previous classifiers and future classifiers
+* experiment_test_dp_dtel_rule.py: Use the dynamic predictor to generate a pool of future classifiers based on testing set. Ruled-based weighted hard voting is done by previous classifiers and future classifiers
 * datasets.py: Datasets for the experiment  
 * utils.py: Some utilities of training and testing methods  
 * models.py: Models for the experiment, e.g., classifier, DP and VAE  
@@ -286,6 +286,7 @@ python3 experiment_vae.py --last_step_method soft --dataset gas
 --train_ratio: set the ratio of the training set while splitting (type=float, default=0.8)
 --patience: set the patience for early stopping (type=int, default=7)
 --life_time_coefficient: set life time coefficient (type=float, default=1.0)
+--alpha: set the tradeoff between current feedback and previous weights (type=float, default=0.5)
 ```
 
 ## Note
