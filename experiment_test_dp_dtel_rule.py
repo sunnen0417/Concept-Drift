@@ -42,6 +42,7 @@ def get_parser():
     parser.add_argument('-tr', '--train_ratio', type=float, default=0.8)
     parser.add_argument('-p', '--patience', type=int, default=7)
     parser.add_argument('-ltc', '--life_time_coefficient', type=float, default=1.0)
+    parser.add_argument('-a', '--alpha', type=float, default=0.5)
     return parser
 
 if __name__ == '__main__':
@@ -68,6 +69,7 @@ if __name__ == '__main__':
     train_ratio = args.train_ratio
     patience = args.patience
     life_time_coefficient = args.life_time_coefficient
+    alpha = args.alpha
     
     # Dataset
     trainset = dataset_dict[args.dataset]
@@ -243,8 +245,8 @@ if __name__ == '__main__':
             w.append(acc)
         else:
             feedback, pred_feedback = test_dp_dtel_get_feedback_acc(data_loader, classifier_list, pred_classifier_list, device)
-            w = (np.array(feedback) + np.array(w)) / 2
-            pred_w = (np.array(pred_feedback) + np.array(pred_w)) / 2
+            w = alpha * np.array(feedback) + (1 - alpha) * np.array(w)
+            pred_w = alpha * np.array(pred_feedback) + (1 - alpha) * np.array(pred_w)
             w = w.tolist()
             pred_w = pred_w.tolist()
             w.insert(0, w[0] * life_time_coefficient)

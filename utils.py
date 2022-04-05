@@ -1036,5 +1036,90 @@ def test_dp_dtel_get_feedback_acc(test_loader, classifier_list, pred_classifier_
         loss, acc = test(test_loader, classifier, device)
         keep_w.append(acc)
     return keep_w[0:len(classifier_list)], keep_w[len(classifier_list):]
+
+def test_dp_dtel_get_feedback_weight(test_loader, classifier_list, pred_classifier_list, num_classes, epsilon, device):
+    keep_classifiers = classifier_list + pred_classifier_list
+    keep_w = []
+    mse_g = MSE_gamma(test_loader, num_classes, device)
+    for i in range(len(keep_classifiers)):
+        classifier = keep_classifiers[i]
+        mse_i = MSE_i(classifier, test_loader, device)
+        weight = 1 / (mse_g + mse_i + epsilon)
+        keep_w.append(weight)
+    return keep_w[0:len(classifier_list)], keep_w[len(classifier_list):]
+    
+def train_ensemble_weight(data_loader, ground_truth_classifier, classifier_list, w, pred_classifier_list, pred_w, num_classes, epsilon, lr, decay, device):
+    keep_classifier = classifier_list + pred_classifier_list
+    keep_w = w + pred_w
+    keep_w = torch.FloatTensor(keep_w).to(device)
+    keep_w.requires_grad = True
+    optimizer = optim.Adam([keep_w], lr=lr, weight_decay=decay)
+    
+    criterion = nn.NLLLoss(reduction='mean')
+    ground_truth_classifier.to(device)
+    ground_truth_classifier.eval()
+    for F in keep_classifier:
+        F.to(device)
+        F.eval()
+    for data, target in data_loader:
+        data, target = data.to(device), target.to(device)
+        pred_softmax_all = []
+        for F in keep_classifier:
+            pred_logit = F(data)
+            _, hard_vote = pred_logit.max(1)
+            hard_vote = nn.functional.one_hot(hard_vote, num_classes)
+            pred_softmax_all.append(hard_vote.tolist())
+        pred_softmax_all = torch.FloatTensor(pred_softmax_all).to(device)
+        pred_softmax_all = torch.clamp(pred_softmax_all, min=epsilon, max=1-epsilon*(num_classes-1))
+        s = nn.functional.softmax(keep_w, dim=0).view(-1, 1, 1)
+        weight_vote = torch.sum(s[0:len(w)]*pred_softmax_all[0:len(w)], dim=0)
+        if len(pred_w) > 0:
+            weight_vote += torch.sum(s[len(w)]*pred_softmax_all[len(w):], dim=0)
+        loss = criterion(weight_vote.log(), target)
+        loss.backward()
+        optimizer.step()
+    keep_w = keep_w.tolist()
+    for i in range(len(w)+1, len(keep_w)):
+        keep_w[i] = keep_w[len(w)]
+    return keep_w[0:len(w)], keep_w[len(w):]
+
+def test_ensemble_weight(data_loader, ground_truth_classifier, classifier_list, w, pred_classifier_list, pred_w, num_classes, epsilon, device):
+    keep_classifier = classifier_list + pred_classifier_list
+    keep_w = w + pred_w
+    keep_w = torch.FloatTensor(keep_w).to(device)
+    
+    criterion = nn.NLLLoss(reduction='mean')
+    ground_truth_classifier.to(device)
+    ground_truth_classifier.eval()
+    for F in keep_classifier:
+        F.to(device)
+        F.eval()
+    total_loss = 0
+    correct = 0
+    with torch.no_grad():
+        for data, target in data_loader:
+            data, target = data.to(device), target.to(device)
+            pred_softmax_all = []
+            for F in keep_classifier:
+                pred_logit = F(data)
+                _, hard_vote = pred_logit.max(1)
+                hard_vote = nn.functional.one_hot(hard_vote, num_classes)
+                pred_softmax_all.append(hard_vote.tolist())
+            pred_softmax_all = torch.FloatTensor(pred_softmax_all).to(device)
+            pred_softmax_all = torch.clamp(pred_softmax_all, min=epsilon, max=1-epsilon*(num_classes-1))
+            s = nn.functional.softmax(keep_w, dim=0).view(-1, 1, 1)
+            weight_vote = torch.sum(s*pred_softmax_all, dim=0)
+            loss = criterion(weight_vote.log(), target)
+            total_loss += loss.item() * len(data)
+            _, hard_vote = pred_softmax_all.max(2)
+            hard_vote = nn.functional.one_hot(hard_vote, num_classes)
+            weight_hard_vote = torch.sum(s*hard_vote, dim=0)
+            pred = torch.argmax(weight_hard_vote, dim=1)
+            correct += pred.eq(target).sum().item()
+            
+    acc = correct / len(data_loader.dataset)
+    total_loss /= len(data_loader.dataset)
+    return total_loss, acc
+        
     
     
