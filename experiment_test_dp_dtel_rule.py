@@ -43,6 +43,7 @@ def get_parser():
     parser.add_argument('-p', '--patience', type=int, default=7)
     parser.add_argument('-ltc', '--life_time_coefficient', type=float, default=1.0)
     parser.add_argument('-a', '--alpha', type=float, default=0.5)
+    parser.add_argument('-v', '--voting', type=str, default='soft')
     return parser
 
 if __name__ == '__main__':
@@ -70,6 +71,7 @@ if __name__ == '__main__':
     patience = args.patience
     life_time_coefficient = args.life_time_coefficient
     alpha = args.alpha
+    voting = args.voting
     
     # Dataset
     trainset = dataset_dict[args.dataset]
@@ -152,7 +154,7 @@ if __name__ == '__main__':
                     optimizer = optim.Adam(F.parameters(), lr=lr, weight_decay=decay)
                     optimizer.load_state_dict(best_opt_state_dict)
                     pred_classifier_list.append(F)
-                acc = test_dp_dtel_test_ensemble(data_loader, classifier_list, w, pred_classifier_list, pred_w, classes, device, voting='hard')
+                acc = test_dp_dtel_test_ensemble(data_loader, classifier_list, w, pred_classifier_list, pred_w, classes, device, voting=voting)
             else:
                 _, acc = test(data_loader, classifier_list[-1], device)
                 
