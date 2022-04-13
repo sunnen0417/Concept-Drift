@@ -288,6 +288,7 @@ python3 experiment_vae.py --last_step_method soft --dataset gas
 --life_time_coefficient: set life time coefficient (type=float, default=1.0)
 --alpha: set the tradeoff between current feedback and previous weights (type=float, default=0.5)
 --voting: set the voting mechanism during prediction (type=str, default='soft', option={'soft', 'hard'})
+--mask_old_classifier: whether to exclude old classifiers during prediction (action="store_true")
 ```
 
 ## Note
