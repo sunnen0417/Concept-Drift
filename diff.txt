@@ -1,0 +1,60 @@
+11c11
+< from utils import train, test, train_soft, test_soft, train_dynamic, test_dynamic, predict_dynamic, draw_decision_boundary, split_train_valid, test_ensemble_v3, test_feedback_acc_v3
+---
+> from utils import train, test, train_soft, test_soft, train_dynamic, test_dynamic, predict_dynamic, draw_decision_boundary, split_train_valid, test_dp_dtel_test_ensemble, test_dp_dtel_get_feedback_acc
+101,102d100
+<     finetuned_classifier_list = []
+<     finetuned_w = []
+162c160
+<                     acc = test_ensemble_v3(data_loader, [], [], finetuned_classifier_list, finetuned_w, pred_classifier_list, pred_w, classes, device, voting=voting)
+---
+>                     acc = test_dp_dtel_test_ensemble(data_loader, [], [], pred_classifier_list, pred_w, classes, device, voting=voting)
+164c162
+<                     acc = test_ensemble_v3(data_loader, classifier_list, w, finetuned_classifier_list, finetuned_w, pred_classifier_list, pred_w, classes, device, voting=voting)
+---
+>                     acc = test_dp_dtel_test_ensemble(data_loader, classifier_list, w, pred_classifier_list, pred_w, classes, device, voting=voting)
+247a246
+>         
+254d252
+<             finetuned_w.append(acc)
+256,259c254
+<             feedback, finetuned_feedback, pred_feedback = \
+<                 test_feedback_acc_v3(
+<                     data_loader, classifier_list, finetuned_classifier_list, pred_classifier_list, device
+<                 )
+---
+>             feedback, pred_feedback = test_dp_dtel_get_feedback_acc(data_loader, classifier_list, pred_classifier_list, device)
+261,262d255
+<             assert(len(finetuned_feedback) == len(finetuned_w))
+<             finetuned_w = alpha * np.array(finetuned_feedback) + (1 - alpha) * np.array(finetuned_w)
+265d257
+<             finetuned_w = finetuned_w.tolist()
+268d259
+<             finetuned_w.insert(0, finetuned_w[0] * life_time_coefficient)
+275d265
+<             finetuned_w.pop(0)
+281,291d270
+<         # transfer historical classifier
+<         finetuned_classifier_list = []
+<         data_loader2 = Data.DataLoader(trainset, batch_size=batch_size, 
+<                                        shuffle=True, num_workers=num_workers)
+<         for i in range(len(classifier_list)):
+<             finetuned_classifier_list.append(copy.deepcopy(classifier_list[i]))
+<             optimizer = optim.Adam(finetuned_classifier_list[i].parameters(), lr=lr, weight_decay=decay)
+<             for j in range(finetuned_epochs):
+<                 train(data_loader2, finetuned_classifier_list[i], optimizer, device)
+<         # finetuned_classifier_list.append(copy.deepcopy(best_F))
+< 
+293,297c272
+< 
+<         print(f'w: {sum(w)/len(w):.3f} {list(np.around(np.array(w), 3))}')
+<         print(f'finetuned_w: {sum(finetuned_w)/len(finetuned_w):.3f} {list(np.around(np.array(finetuned_w), 3))}')
+<         if len(pred_w) != 0:
+<             print(f'pred_w: {sum(pred_w)/len(pred_w):.3f} {list(np.around(np.array(pred_w), 3))}')
+---
+>         print(f'weight:{w}, {pred_w}')
+301a277,280
+> 
+>         
+>         
+>     
