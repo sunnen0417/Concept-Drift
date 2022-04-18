@@ -1002,8 +1002,8 @@ def dtel_test_ensemble_ca(test_loader, validation_set, F_ca, classifier_pool, pr
     return total_loss, acc
 
 
-### Test DP DTEL (weighted soft vote)
-def test_dp_dtel_test_ensemble(test_loader, classifier_list, w, pred_classifier_list, pred_w, num_classes, device, voting='hard'): 
+### Test DP DTEL (weighted hard/soft voting)
+def test_dp_dtel_test_ensemble(test_loader, classifier_list, w, pred_classifier_list, pred_w, num_classes, device, voting='soft'): 
     correct = 0
     keep_classifiers = classifier_list + pred_classifier_list
     keep_w = w + pred_w
@@ -1047,7 +1047,44 @@ def test_dp_dtel_get_feedback_weight(test_loader, classifier_list, pred_classifi
         weight = 1 / (mse_g + mse_i + epsilon)
         keep_w.append(weight)
     return keep_w[0:len(classifier_list)], keep_w[len(classifier_list):]
-    
+
+### Test ensemble 3 sets (weighted hard/soft voting)
+def test_ensemble_3_sets(test_loader, classifier_list, w, finetuned_classifier_list, finetuned_w, pred_classifier_list, pred_w, num_classes, device, voting='soft'): 
+    correct = 0
+    keep_classifiers = classifier_list + finetuned_classifier_list + pred_classifier_list
+    keep_w = w + finetuned_w + pred_w
+    keep_w = torch.FloatTensor(keep_w).view(-1, 1).to(device)
+    with torch.no_grad():
+        for data, target in test_loader:  # batch_size is 1
+            data, target = data.to(device), target.to(device)
+            for i, cls in enumerate(keep_classifiers):
+                cls.to(device)
+                cls.eval()
+                cls_outputs = torch.cat((cls_outputs, cls(data))) if i else cls(data) 
+            if voting == 'soft':
+                cls_softmax = nn.Softmax(dim=1)(cls_outputs)
+                weight_vote = cls_softmax * keep_w
+            elif voting == 'hard':
+                _, vote = cls_outputs.max(1)
+                vote = nn.functional.one_hot(vote, num_classes=num_classes)
+                weight_vote = vote * keep_w
+            output = weight_vote.sum(dim=0, keepdim=True)
+            pred = output.argmax()
+            correct += pred.eq(target).sum().item()
+    acc = correct / len(test_loader.dataset)
+    return acc
+
+def get_feedback_acc_3_sets(test_loader, classifier_list, finetuned_classifier_list, pred_classifier_list, device):
+    keep_classifiers = classifier_list + finetuned_classifier_list + pred_classifier_list
+    keep_w = []
+    for i in range(len(keep_classifiers)):
+        classifier = keep_classifiers[i]
+        loss, acc = test(test_loader, classifier, device)
+        keep_w.append(acc)
+    c, f = len(classifier_list), len(finetuned_classifier_list)
+    return keep_w[:c], keep_w[c: c+f], keep_w[c+f:]
+
+### Learned weights
 def train_ensemble_weight(data_loader, ground_truth_classifier, classifier_list, w, pred_classifier_list, pred_w, num_classes, epsilon, lr, decay, device):
     keep_classifier = classifier_list + pred_classifier_list
     keep_w = w + pred_w
