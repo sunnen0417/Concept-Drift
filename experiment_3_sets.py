@@ -284,31 +284,10 @@ if __name__ == '__main__':
         data_loader2 = Data.DataLoader(trainset, batch_size=batch_size, 
                                        shuffle=True, num_workers=num_workers)
         for i in range(len(classifier_list)):
-            F = copy.deepcopy(classifier_list[i])
-            F.to(device)
-            optimizer = optim.Adam(F.parameters(), lr=lr, weight_decay=decay)
-            if i < len(classifier_list) - 1:
-                best_acc = -1
-                best_F = None
-                p = patience
-                for j in range(finetuned_epochs):
-                    print('Epoch:', j+1)
-                    train(t_data_loader, F, optimizer, device)
-                    loss, acc = test(t_data_loader, F, device)
-                    print(f'Train loss:{loss}, acc:{acc}')
-                    loss, acc = test(v_data_loader, F, device)
-                    print(f'Valid loss:{loss}, acc:{acc}')
-                    if acc > best_acc:
-                        best_acc = acc 
-                        best_F = copy.deepcopy(F)
-                        p = patience
-                    else:
-                        p -= 1
-                        if p < 0:
-                            print('Early stopping!')
-                            break
-                F = best_F
-            finetuned_classifier_list.append(F)
+            finetuned_classifier_list.append(copy.deepcopy(classifier_list[i]))
+            optimizer = optim.Adam(finetuned_classifier_list[i].parameters(), lr=lr, weight_decay=decay)
+            for j in range(finetuned_epochs):
+                train(data_loader2, finetuned_classifier_list[i], optimizer, device)
         
         pred_classifier_list = []
 
