@@ -789,9 +789,9 @@ class KDD99Dataset(Data.Dataset):
         self.alldata = []
         self.data = []
         self.target = []
-        self.num_batch = 10
+        self.batch_data_num = 1000
         self.normalize = normalize
-        self.batch_data_num = 0
+        self.num_batch = 0
         self.normalize_indices = []
         self.mu = 0
         self.std = 0
@@ -814,7 +814,7 @@ class KDD99Dataset(Data.Dataset):
         df['label'] = df['label'].map(f) 
         self.alldata = df.drop(['label'],axis=1).to_numpy()
         self.alltarget = df['label'].to_numpy()
-        self.batch_data_num = int(self.alldata.shape[0] / self.num_batch)
+        self.num_batch = int(self.alldata.shape[0] / self.batch_data_num)
 
         self.normalize_indices = [0,1,2,4,5,6,7,9,12,13,14,15,16,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37]
         self.mu = np.mean(self.alldata[:self.batch_data_num, self.normalize_indices], axis = 0)
