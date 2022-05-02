@@ -128,13 +128,29 @@ if __name__ == '__main__':
 
         # transfer historical classifier
         finetuned_classifier_list = []
-        data_loader2 = Data.DataLoader(trainset, batch_size=batch_size, 
-                                shuffle=True, num_workers=num_workers)
         for i in range(len(classifier_list)):
-            finetuned_classifier_list.append(copy.deepcopy(classifier_list[i]))
-            optimizer = optim.Adam(finetuned_classifier_list[i].parameters(), lr=lr, weight_decay=decay)
+            F_ = copy.deepcopy(classifier_list[i])
+            optimizer = optim.Adam(F_.parameters(), lr=lr, weight_decay=decay)
+            best_acc = -1
+            best_F_ = None
+            p = patience
             for j in range(finetuned_epochs):
-                train(data_loader2, finetuned_classifier_list[i], optimizer, device)
+                print('Epoch:', j+1)
+                train(t_data_loader, F_, optimizer, device)
+                loss, acc = test(t_data_loader, F_, device)
+                print(f'Train loss:{loss}, acc:{acc}')
+                loss, acc = test(v_data_loader, F_, device)
+                print(f'Valid loss:{loss}, acc:{acc}')
+                if acc > best_acc:
+                    best_acc = acc
+                    best_F_ = copy.deepcopy(F_)
+                    p = patience
+                else:
+                    p -= 1
+                    if p < 0:
+                        print('Early stopping!')
+                        break
+            finetuned_classifier_list.append(best_F_)
         finetuned_classifier_list.append(copy.deepcopy(best_F))
 
         # select classifiers
