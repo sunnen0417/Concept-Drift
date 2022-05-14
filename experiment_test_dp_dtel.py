@@ -8,7 +8,7 @@ import torch.utils.data as Data
 import matplotlib.pyplot as plt
 from datasets import SoftmaxDataset, BufferDataset
 from datasets import dataset_dict
-from utils import train, test, train_soft, test_soft, train_dynamic, test_dynamic, predict_dynamic, draw_decision_boundary, split_train_valid, test_dp_dtel_test_ensemble, test_dp_dtel_update_accuracy
+from utils import train, test, train_soft, test_soft, train_dynamic, test_dynamic, predict_dynamic, draw_decision_boundary, split_train_valid, test_dp_dtel_test_ensemble
 from models import LogisticRegression, MLP, DynamicPredictor
 import argparse
 
@@ -231,7 +231,6 @@ if __name__ == '__main__':
             d_optimizer = optim.AdamW(DP.parameters(), lr=d_lr, weight_decay=d_decay)
             d_optimizer.load_state_dict(best_opt_state_dict)
                                    
-        #w, pred_w = test_dp_dtel_update_accuracy(v_data_loader, classifier_list, pred_classifier_list, device)
         print(f'Add classifier {t}')
         classifier_list.append(F)
         w.append(1)

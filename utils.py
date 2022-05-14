@@ -1,4 +1,5 @@
 import numpy as np
+import math
 import torch
 import torch.nn as nn
 import torch.utils.data as Data
@@ -337,7 +338,12 @@ def predict_dynamic(test_loader, DP, device):
                 softmax_log += prob            
     return softmax_log
 
-def draw_decision_boundary(data_loader, F, device, x_range=None, y_range=None, newfig=False, db_color='b'):
+# Only for 2d
+def draw_decision_boundary(data_loader, F, device, num_class, x_range=None, y_range=None, newfig=False, db_color='b', dp_colors=['#FF9999', '#99CCFF', '#99FF99', 'c', 'm', 'y', '#F6B26B']):
+    if num_class > len(dp_colors):
+        print('Error: length of dp_colors should not be lower than num_class')
+        return
+    
     delta = 0.2
     h = 0.02
     X = []
@@ -369,7 +375,7 @@ def draw_decision_boundary(data_loader, F, device, x_range=None, y_range=None, n
             x_plot.append([xx[i][j], yy[i][j]])
     x_plot = torch.FloatTensor(x_plot)
     x_plot_dataset = Data.TensorDataset(x_plot)
-    x_plot_loader = Data.DataLoader(x_plot_dataset, batch_size=data_loader.batch_size,
+    x_plot_loader = Data.DataLoader(x_plot_dataset, batch_size=512,
                                     shuffle=False, num_workers=data_loader.num_workers)
     F.to(device)
     F.eval()
@@ -389,10 +395,10 @@ def draw_decision_boundary(data_loader, F, device, x_range=None, y_range=None, n
         plt.xlabel('x1')
         plt.ylabel('x2')
         plt.axis([np.amin(xx), np.amax(xx), np.amin(yy), np.amax(yy)])
-        mask = (y == 0)
-        plt.plot(X[mask][:, 0], X[mask][:, 1], '.', color='#FF9999')
-        plt.plot(X[~mask][:, 0], X[~mask][:, 1], '.', color='#99CCFF')
-    plt.contour(xx, yy, zz, 0, colors=db_color, linewidths=1.5)
+        for i in range(num_class):
+            mask = (y == i)
+            plt.plot(X[mask][:, 0], X[mask][:, 1], '.', color=dp_colors[i])
+    plt.contour(xx, yy, zz, num_class-1, colors=db_color, linewidths=1.5)
     
 
 # Losses for VAE
@@ -1049,11 +1055,13 @@ def test_dp_dtel_get_feedback_weight(test_loader, classifier_list, pred_classifi
     return keep_w[0:len(classifier_list)], keep_w[len(classifier_list):]
 
 ### Test ensemble 3 sets (weighted hard/soft voting)
-def test_ensemble_3_sets(test_loader, classifier_list, w, finetuned_classifier_list, finetuned_w, pred_classifier_list, pred_w, num_classes, device, voting='soft'): 
+def test_ensemble_3_sets(test_loader, classifier_list, w, finetuned_classifier_list, finetuned_w, pred_classifier_list, pred_w, num_classes, device, voting='soft', return_prediction=False): 
     correct = 0
     keep_classifiers = classifier_list + finetuned_classifier_list + pred_classifier_list
     keep_w = w + finetuned_w + pred_w
     keep_w = torch.FloatTensor(keep_w).view(-1, 1).to(device)
+    if return_prediction:
+        preds = []
     with torch.no_grad():
         for data, target in test_loader:  # batch_size is 1
             data, target = data.to(device), target.to(device)
@@ -1071,7 +1079,11 @@ def test_ensemble_3_sets(test_loader, classifier_list, w, finetuned_classifier_l
             output = weight_vote.sum(dim=0, keepdim=True)
             pred = output.argmax()
             correct += pred.eq(target).sum().item()
+            if return_prediction:
+                preds.append(int(pred.item()))
     acc = correct / len(test_loader.dataset)
+    if return_prediction:
+        return acc, preds
     return acc
 
 def get_feedback_acc_3_sets(test_loader, classifier_list, finetuned_classifier_list, pred_classifier_list, device):
@@ -1158,5 +1170,62 @@ def test_ensemble_weight(data_loader, ground_truth_classifier, classifier_list, 
     total_loss /= len(data_loader.dataset)
     return total_loss, acc
         
-    
+# Testing using conditional entropy
+def test_entropy(test_loader, F, device):
+    F.to(device)
+    F.eval()
+    criterion = ConditionalEntropyLoss()
+    with torch.no_grad():
+        total_loss = 0
+        for data, target in test_loader:
+            data, target = data.to(device), target.to(device)
+            logits = F(data)
+            loss = criterion(logits)
+            total_loss += loss.item() * len(data)
+    total_loss /= len(test_loader.dataset)
+    return total_loss
+
+### Learn++.NSE
+# w
+def get_instance_weight(Et, preds, targets):
+    n = len(preds)
+    instance_weight = np.ones(n) / n
+    for i in range(n):
+        if preds[i] == targets[i]:
+            instance_weight[i] *= Et
+    instance_weight = instance_weight / np.sum(instance_weight)
+    return instance_weight.tolist()
+
+# Beta       
+def evaluate_errors(test_loader, classifier_list, instance_weight, device):
+    betas = []
+    target = test_loader.dataset.target
+    for F in classifier_list:
+        loss, acc, softmax = test(test_loader, F, device, return_softmax=True)
+        pred = [np.argmax(p) for p in softmax]
+        err = 0
+        for i in range(len(pred)):
+            if target[i] != pred[i]:
+                err += instance_weight[i]
+        if err > 0.5:
+            err = 0.5
+        beta = err / (1 - err)
+        betas.append(beta)
+    return betas
+                
+# Omega
+def sigmoidol(t, k, a=0.5, b=10): 
+    e = a * (t - k - b)
+    return 1 / (1 + math.exp(-e))
+
+# Weight
+def get_weight_from_errors(betas):
+    a = np.arange(len(betas)) + 1
+    omegas = []
+    for t in a:
+        o = sigmoidol(t, 0)
+        omegas.append(o)
+    omegas = np.array(omegas) / np.sum(omegas)
+    beta_ = np.sum(np.array(betas)*omegas)
+    return math.log(1/beta_)
     

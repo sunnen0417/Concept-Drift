@@ -79,7 +79,7 @@ if __name__ == '__main__':
     classes = trainset.num_class
     
     # Visualize the decision boundary if the dataset is suitable 
-    if dim == 2 and classes == 2:
+    if dim == 2:
         draw_boundary = True
         img_dir = f'{args.dataset}_num_batch_{trainset.num_batch}_cls_t_dp_all_{last_step_method}_seed_{seed}'
         os.makedirs(img_dir, exist_ok=True)
@@ -151,13 +151,13 @@ if __name__ == '__main__':
         
         if t > 0:
             if draw_boundary:
-                draw_decision_boundary(data_loader, F, device, x_range=trainset.x_range, y_range=trainset.y_range, newfig=False, db_color='g')
+                draw_decision_boundary(data_loader, F, device, classes, x_range=trainset.x_range, y_range=trainset.y_range, newfig=False, db_color='g')
                 plt.savefig(f'{img_dir}/batch{t-1}.png')
             if t == num_batch - 1:
                 break
         
         if draw_boundary:
-            draw_decision_boundary(data_loader, F, device, x_range=trainset.x_range, y_range=trainset.y_range, newfig=True, db_color='b')
+            draw_decision_boundary(data_loader, F, device, classes, x_range=trainset.x_range, y_range=trainset.y_range, newfig=True, db_color='b')
             
         print(f'Get data softmax {t}')
         if t > 0:
@@ -320,7 +320,7 @@ if __name__ == '__main__':
         if draw_boundary:      
             data_loader = Data.DataLoader(trainset, batch_size=batch_size, 
                                         shuffle=True, num_workers=num_workers)        
-            draw_decision_boundary(data_loader, F, device, x_range=trainset.x_range, y_range=trainset.y_range, newfig=False, db_color='r')
+            draw_decision_boundary(data_loader, F, device, classes, x_range=trainset.x_range, y_range=trainset.y_range, newfig=False, db_color='r')
     
     print('Test acc log:', test_acc)
     test_acc = np.array(test_acc)

@@ -74,13 +74,20 @@ if __name__ == '__main__':
     alpha = args.alpha
     voting = args.voting
     mask_old_classifier = args.mask_old_classifier
+    draw_boundary = False
     
     # Dataset
     trainset = dataset_dict[args.dataset]
     num_batch = trainset.num_batch
     dim = trainset.data.shape[1]
     classes = trainset.num_class
- 
+
+    # Visualize the decision boundary if the dataset is suitable 
+    if dim == 2:
+        draw_boundary = True
+        img_dir = f'{args.dataset}_num_batch_{trainset.num_batch}_test_dp_dtel_rule_seed_{seed}'
+        os.makedirs(img_dir, exist_ok=True)
+        
     # Classifier
     if args.classifier == 'lr':
         classifier = LogisticRegression
@@ -160,9 +167,12 @@ if __name__ == '__main__':
                     acc = test_dp_dtel_test_ensemble(data_loader, [], [], pred_classifier_list, pred_w, classes, device, voting=voting)
                 else:
                     acc = test_dp_dtel_test_ensemble(data_loader, classifier_list, w, pred_classifier_list, pred_w, classes, device, voting=voting)
+                if draw_boundary:
+                    draw_decision_boundary(data_loader, pred_classifier_list[-1], device, classes, x_range=trainset.x_range, y_range=trainset.y_range, newfig=False, db_color='r')
             else:
                 _, acc = test(data_loader, classifier_list[-1], device)
-                
+                if draw_boundary:
+                    draw_decision_boundary(data_loader, classifier_list[-1], device, classes, x_range=trainset.x_range, y_range=trainset.y_range, newfig=False, db_color='r')                
             print(f'acc:{acc}')
             test_acc.append(acc)
             
@@ -201,8 +211,14 @@ if __name__ == '__main__':
         F = best_F
 
         if t > 0:
+            if draw_boundary:
+                draw_decision_boundary(data_loader, F, device, classes, x_range=trainset.x_range, y_range=trainset.y_range, newfig=False, db_color='g')
+                plt.savefig(f'{img_dir}/batch{t-1}.png')
             if t == num_batch - 1:
                 break
+            
+        if draw_boundary:
+            draw_decision_boundary(data_loader, F, device, classes, x_range=trainset.x_range, y_range=trainset.y_range, newfig=True, db_color='b')
         
         if t > 0:    
             print(f'Get data softmax {t}')
@@ -252,11 +268,16 @@ if __name__ == '__main__':
             w.append(acc)
         else:
             feedback, pred_feedback = test_dp_dtel_get_feedback_acc(data_loader, classifier_list, pred_classifier_list, device)
+            if len(feedback) != 0:
+                print(f'feedback: {sum(feedback)/len(feedback):.3f} {list(np.around(np.array(feedback), 3))}')
+            if len(pred_feedback) != 0:
+                print(f'pred_feedback: {sum(pred_feedback)/len(pred_feedback):.3f} {list(np.around(np.array(pred_feedback), 3))}')
             w = alpha * np.array(feedback) + (1 - alpha) * np.array(w)
-            pred_w = alpha * np.array(pred_feedback) + (1 - alpha) * np.array(pred_w)
             w = w.tolist()
-            pred_w = pred_w.tolist()
             w.insert(0, w[0] * life_time_coefficient)
+            if len(pred_w) > 0:
+                pred_w = [alpha * np.mean(pred_feedback) + (1 - alpha) * np.mean(pred_w)] * len(pred_w)
+
             
         print(f'Add classifier {t}')
         classifier_list.append(F)
@@ -266,10 +287,13 @@ if __name__ == '__main__':
         if t == activate_dynamic_t:
             pred_w = [w[-1]] * len(w)
         elif t > activate_dynamic_t:
-            pred_w = [np.mean(pred_w)] * len(w)
+            pred_w = [pred_w[0]] * len(w)
 
         pred_classifier_list = []
-        print(f'weight:{w}, {pred_w}')
+        if len(w) != 0:
+            print(f'w: {sum(w)/len(w):.3f} {list(np.around(np.array(w), 3))}')
+        if len(pred_w) != 0:
+            print(f'pred_w: {sum(pred_w)/len(pred_w):.3f} {list(np.around(np.array(pred_w), 3))}')
         
     print('Test acc log:', test_acc)
     test_acc = np.array(test_acc)
