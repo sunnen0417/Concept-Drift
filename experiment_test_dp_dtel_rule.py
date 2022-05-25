@@ -213,7 +213,7 @@ if __name__ == '__main__':
         if t > 0:
             if draw_boundary:
                 draw_decision_boundary(data_loader, F, device, classes, x_range=trainset.x_range, y_range=trainset.y_range, newfig=False, db_color='g')
-                plt.savefig(f'{img_dir}/batch{t-1}.png')
+                plt.savefig(f'{img_dir}/batch{t-1}.png', bbox_inches='tight')
             if t == num_batch - 1:
                 break
             
