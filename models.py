@@ -33,7 +33,7 @@ class MLP(nn.Module):
     def forward(self, x):
         x = self.fc(x)
         return x
-    
+
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, dropout=0.1, max_len=5000):
         super(PositionalEncoding, self).__init__()
@@ -724,4 +724,20 @@ class DDCW:
             for j in range(len(self.W)):
                 total_weight += self.W[j][i]
             for j in range(len(self.W)):
-                self.W[j][i] /= total_weight                    
+                self.W[j][i] /= total_weight
+
+# DDG-DA
+class PredNet(nn.Module):
+    def __init__(self, chunk_size):
+        super().__init__()
+        self.chunk_size = chunk_size
+        self.W = nn.Parameter(torch.zeros(self.chunk_size, 1))
+        self.W = nn.init.kaiming_normal_(self.W)
+
+    def forward(self, X, y, X_test):
+        assert X.shape[0] == self.chunk_size
+        X_w = X.T * self.W.view(1, X.shape[0])
+        # X_w = X.T * torch.sigmoid(self.W.T)
+        theta = torch.inverse(X_w @ X) @ X_w @ y
+        return torch.sigmoid(X_test @ theta)
+        # return X_test @ theta

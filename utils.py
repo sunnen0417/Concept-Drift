@@ -1228,4 +1228,35 @@ def get_weight_from_errors(betas):
     omegas = np.array(omegas) / np.sum(omegas)
     beta_ = np.sum(np.array(betas)*omegas)
     return math.log(1/beta_)
-    
+
+# DDG-DA
+def train_ddg_da(train_loader, DDG_DA, optimizer, device):
+    DDG_DA.to(device)
+    DDG_DA.train()
+    criterion = nn.BCELoss()
+    for X, y, X_test, target in train_loader:
+        X, y = X.to(device), y.to(device)
+        X_test, target = X_test.to(device), target.to(device)
+        optimizer.zero_grad()
+        output = DDG_DA(X, y, X_test)
+        loss = criterion(output, target)
+        loss.backward()
+        optimizer.step()
+
+def test_ddg_da(test_loader, DDG_DA, device):
+    DDG_DA.to(device)
+    DDG_DA.eval()
+    criterion = nn.BCELoss()
+    with torch.no_grad():
+        assert len(test_loader) == 1
+        X, y, X_test, target = test_loader[0]
+        X, y = X.to(device), y.to(device)
+        X_test, target = X_test.to(device), target.to(device)
+        output = DDG_DA(X, y, X_test)
+        loss = criterion(output, target)
+        total_loss = loss.item() * len(X)
+        pred = torch.where(output < 0.5, 0, 1)
+        correct = pred.eq(target).sum().item()
+    acc = correct / len(target)
+    total_loss /= len(target)
+    return total_loss, acc
