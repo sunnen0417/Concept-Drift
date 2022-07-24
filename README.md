@@ -24,7 +24,7 @@ pip3 install -r requirements.txt --extra-index-url https://download.pytorch.org/
 ```
 sh run_command.sh
 ```
-* You can also apply a method on a dataset (the Hyperparaters Section shows the detailed arguments of each method). For example, if you want to run DP.FUTURE on the Rotation dataset:
+* You can also apply a method on a dataset (the Hyperparameters Section shows the detailed arguments of each method). For example, if you want to run DP.FUTURE on the Rotation dataset:
 ```
 python3 experiment_dp_future.py --seed 0 --finetuned_epochs 50 --activate_dynamic_t 3 --max_ensemble_size 3 --dataset rotate --classifier lr --device cuda:0 --voting soft --mask_old_classifier
 ```
