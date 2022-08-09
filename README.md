@@ -183,8 +183,4 @@ python3 experiment_dp_future.py --seed 0 --finetuned_epochs 50 --activate_dynami
 * For Dynse framework, please refer to https://www.researchgate.net/publication/323727593_Adapting_the_Dynamic_Classifier_Selection_for_Concept_Drift_Scenarios
 * For DTEL framework, please refer to https://ieeexplore.ieee.org/document/8246541
 * For DDCW framework, please refer to https://ieeexplore.ieee.org/document/9378625
-* For DDG-DA framework, please refer to https://arxiv.org/abs/2201.04038  
-```
-ok
-nice
-```
+* For DDG-DA framework, please refer to https://arxiv.org/abs/2201.04038
